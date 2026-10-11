@@ -31,13 +31,10 @@ data "talos_machine_configuration" "controlplane" {
         allow_scheduling_on_control_planes = var.allow_scheduling_on_control_planes
         inline_manifests                   = local.inline_manifests
       }),
-    ],
-    # Without a hostname Talos Linux generates one itself
-    each.value.hostname != null ? [
       templatefile("${path.module}/templates/machine_config_patch_hostname.tftpl", {
         hostname = each.value.hostname
-      })
-    ] : [],
+      }),
+    ],
     var.talos_machine_config_patch_controlplane != "" ? [var.talos_machine_config_patch_controlplane] : []
   )
 }
@@ -59,13 +56,10 @@ data "talos_machine_configuration" "worker" {
         ip_address      = "${each.key}/${local.network_prefix_length}"
         network_gateway = var.network_gateway
       }),
-    ],
-    # Without a hostname Talos Linux generates one itself
-    each.value.hostname != null ? [
       templatefile("${path.module}/templates/machine_config_patch_hostname.tftpl", {
         hostname = each.value.hostname
-      })
-    ] : [],
+      }),
+    ],
     var.talos_machine_config_patch_worker != "" ? [var.talos_machine_config_patch_worker] : []
   )
 }

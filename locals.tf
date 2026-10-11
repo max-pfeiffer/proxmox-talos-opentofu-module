@@ -11,10 +11,6 @@ locals {
   # The Talos ISO image is downloaded to every Proxmox node which hosts a virtual machine
   proxmox_nodes = toset(concat(values(local.controlplane_proxmox_nodes), values(local.worker_proxmox_nodes)))
 
-  # VM names are derived from each node's own data only, so adding or removing other nodes never renames a VM
-  controlplane_vm_names = { for ip, node in var.node_data.controlplanes : ip => coalesce(node.hostname, format("%s-control-plane-%s", var.cluster_name, replace(ip, ".", "-"))) }
-  worker_vm_names       = { for ip, node in var.node_data.workers : ip => coalesce(node.hostname, format("%s-worker-%s", var.cluster_name, replace(ip, ".", "-"))) }
-
   # Control plane IPs sorted numerically instead of lexically, e.g. 192.168.10.9 before 192.168.10.10
   controlplane_ips_sorted = [
     for padded in sort([for ip in keys(var.node_data.controlplanes) : format("%03d.%03d.%03d.%03d", split(".", ip)...)]) :

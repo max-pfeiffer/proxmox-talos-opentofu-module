@@ -32,6 +32,7 @@ variables {
       "192.168.10.102" = {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+        hostname      = "test-cp-1"
         proxmox_node  = "pve-1"
       }
     }
@@ -39,6 +40,7 @@ variables {
       "192.168.10.103" = {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+        hostname      = "test-worker-0"
         proxmox_node  = "pve-1"
       }
     }
@@ -80,12 +82,7 @@ run "defaults" {
 
   assert {
     condition     = length(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches) == 2
-    error_message = "A node with hostname must get the base and the hostname patch."
-  }
-
-  assert {
-    condition     = length(data.talos_machine_configuration.controlplane["192.168.10.102"].config_patches) == 1
-    error_message = "A node without hostname must only get the base patch."
+    error_message = "A node must get the base and the hostname patch."
   }
 }
 
@@ -109,12 +106,12 @@ run "optional_features" {
   }
 
   assert {
-    condition     = length(data.talos_machine_configuration.controlplane["192.168.10.102"].config_patches) == 2
+    condition     = length(data.talos_machine_configuration.controlplane["192.168.10.102"].config_patches) == 3
     error_message = "The control plane patch must be appended."
   }
 
   assert {
-    condition     = length(data.talos_machine_configuration.worker["192.168.10.103"].config_patches) == 1
+    condition     = length(data.talos_machine_configuration.worker["192.168.10.103"].config_patches) == 2
     error_message = "An empty worker patch must not be appended."
   }
 }
@@ -128,6 +125,7 @@ run "rejects_invalid_node_ip" {
         "not-an-ip" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
         }
       }
     }
@@ -168,23 +166,81 @@ run "rejects_invalid_vip" {
   expect_failures = [var.cluster_vip_shared_ip]
 }
 
-run "stable_vm_names" {
+run "hostname_used_as_node_name" {
   command = plan
 
   assert {
     condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.101"].name == "test-cp-0"
-    error_message = "The hostname must be used as VM name."
+    error_message = "The hostname must be used as control plane VM name."
   }
 
   assert {
-    condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.102"].name == "test-control-plane-192-168-10-102"
-    error_message = "Without hostname the VM name must be derived from the cluster name and the node's IP."
+    condition     = proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].name == "test-worker-0"
+    error_message = "The hostname must be used as worker VM name."
   }
 
   assert {
-    condition     = proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].name == "test-worker-192-168-10-103"
-    error_message = "Without hostname the VM name must be derived from the cluster name and the node's IP."
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[1], "hostname: test-cp-0\n")
+    error_message = "The hostname must be set as control plane Talos hostname."
   }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.worker["192.168.10.103"].config_patches[1], "hostname: test-worker-0\n")
+    error_message = "The hostname must be set as worker Talos hostname."
+  }
+}
+
+run "rejects_invalid_hostname" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "Test_CP_0"
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
+
+run "rejects_duplicate_hostnames" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-node"
+        }
+      }
+      workers = {
+        "192.168.10.103" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-node"
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
+
+run "rejects_talos_version_without_hostname_config" {
+  command = plan
+
+  variables {
+    talos_version = "v1.11.5"
+  }
+
+  expect_failures = [var.talos_version]
 }
 
 run "default_route_via_gateway" {
@@ -210,14 +266,17 @@ run "bootstrap_node_sorted_numerically" {
         "192.168.10.10" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-10"
         }
         "192.168.10.9" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-9"
         }
         "192.168.10.100" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-100"
         }
       }
     }

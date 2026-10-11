@@ -29,8 +29,17 @@ variable "vm_cpu_type" {
 
 # Talos Linux
 variable "talos_version" {
-  description = "Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster."
+  description = "Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. At least 1.12 is required for the HostnameConfig document."
   type        = string
+
+  validation {
+    condition = try(
+      tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[0]) > 1 ||
+      tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[1]) >= 12,
+      false
+    )
+    error_message = "talos_version must be 1.12 or newer, the module configures hostnames with the HostnameConfig document."
+  }
 }
 
 variable "kubernetes_version" {
@@ -51,7 +60,7 @@ variable "talos_linux_iso_image_filename" {
 }
 
 variable "cluster_name" {
-  description = "A name to provide for the Talos cluster, it is also used as prefix for the virtual machine names"
+  description = "A name to provide for the Talos cluster"
   type        = string
   default     = "talos"
 }
@@ -68,26 +77,25 @@ variable "cluster_vip_shared_ip" {
 
 variable "node_data" {
   description = <<-EOT
-    Control plane and worker nodes, keyed by the node's IPv4 address. install_disk and install_image are required,
-    hostname, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
-    The hostname is also the VM name. Without a hostname Talos Linux generates one itself and the VM is named
-    <cluster_name>-control-plane-<ip> or <cluster_name>-worker-<ip>. Without proxmox_node the VM is created on
-    proxmox_target_node.
+    Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install_disk and install_image are
+    required, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
+    The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase
+    RFC 1123 DNS label. Without proxmox_node the VM is created on proxmox_target_node.
   EOT
   type = object({
     controlplanes = map(object({
+      hostname      = string
       install_disk  = string
       install_image = string
-      hostname      = optional(string)
       cpu_cores     = optional(number, 2)
       memory        = optional(number, 8192)
       disk_size     = optional(number, 50)
       proxmox_node  = optional(string)
     }))
     workers = optional(map(object({
+      hostname      = string
       install_disk  = string
       install_image = string
-      hostname      = optional(string)
       cpu_cores     = optional(number, 2)
       memory        = optional(number, 16384)
       disk_size     = optional(number, 50)
@@ -105,6 +113,20 @@ variable "node_data" {
       for ip in concat(keys(var.node_data.controlplanes), keys(var.node_data.workers)) : can(cidrhost("${ip}/32", 0))
     ])
     error_message = "All keys of node_data.controlplanes and node_data.workers must be valid IPv4 addresses."
+  }
+
+  validation {
+    condition = alltrue([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : can(regex("^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$", node.hostname))
+    ])
+    error_message = "All hostnames must be lowercase RFC 1123 DNS labels of at most 63 characters, e.g. talos-cp-0."
+  }
+
+  validation {
+    condition = length(distinct([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : node.hostname
+    ])) == length(var.node_data.controlplanes) + length(var.node_data.workers)
+    error_message = "All hostnames must be unique."
   }
 }
 

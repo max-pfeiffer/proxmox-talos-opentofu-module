@@ -84,11 +84,11 @@ output "kubeconfig" {
 The module is also available directly from GitHub, e.g. for unreleased changes:
 `source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.1.0"`. <!-- x-release-please-version -->
 
-Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `cpu_cores`, `memory` (MB), `disk_size` (GB) and
-`proxmox_node` are optional per node. The `hostname` is also used as virtual machine name. Without a `hostname` Talos
-Linux generates one itself and the virtual machine is named `<cluster_name>-control-plane-<ip>` or
-`<cluster_name>-worker-<ip>`, e.g. `your-cluster-name-worker-192-168-10-102`. Without a `proxmox_node` the virtual
-machine is created on `proxmox_target_node`.
+Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `install_disk` and `install_image` are required,
+`cpu_cores`, `memory` (MB), `disk_size` (GB) and `proxmox_node` are optional per node. The `hostname` is used as virtual
+machine name, Talos hostname and Kubernetes node name, so all three always match. It must be a unique lowercase
+RFC 1123 DNS label of at most 63 characters. Without a `proxmox_node` the virtual machine is created on
+`proxmox_target_node`.
 
 The control plane node with the lowest IP address is used to bootstrap the cluster, run Kubernetes upgrades and
 retrieve the kubeconfig. It is chosen once on creation, adding control plane nodes later does not change it. If you
@@ -126,13 +126,13 @@ You might need to wait a bit until the nodes come up.
 | proxmox\_iso\_datastore | Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type | `string` | `"local"` | no |
 | proxmox\_network\_bridge | Proxmox network bridge the virtual machines are attached to | `string` | `"vmbr0"` | no |
 | vm\_cpu\_type | CPU type emulated for the virtual machines | `string` | `"host"` | no |
-| talos\_version | Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. | `string` | n/a | yes |
+| talos\_version | Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. At least 1.12 is required for the HostnameConfig document. | `string` | n/a | yes |
 | kubernetes\_version | Kubernetes version of the cluster, changing it runs Talos' upgrade-k8s procedure. Required so that a module upgrade never upgrades Kubernetes implicitly. | `string` | n/a | yes |
 | talos\_linux\_iso\_image\_url | URL of the Talos ISO image for initially booting the VM | `string` | `"https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"` | no |
 | talos\_linux\_iso\_image\_filename | Filename of the Talos ISO image for initially booting the VM | `string` | `"talos-linux-v1.13.8-qemu-guest-agent-amd64.iso"` | no |
-| cluster\_name | A name to provide for the Talos cluster, it is also used as prefix for the virtual machine names | `string` | `"talos"` | no |
+| cluster\_name | A name to provide for the Talos cluster | `string` | `"talos"` | no |
 | cluster\_vip\_shared\_ip | Shared virtual IP address for control plane nodes, used as Kubernetes API endpoint | `string` | n/a | yes |
-| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. install\_disk and install\_image are required, hostname, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is also the VM name. Without a hostname Talos Linux generates one itself and the VM is named <cluster\_name>-control-plane-<ip> or <cluster\_name>-worker-<ip>. Without proxmox\_node the VM is created on proxmox\_target\_node. | ```object({ controlplanes = map(object({ install_disk = string install_image = string hostname = optional(string) cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ install_disk = string install_image = string hostname = optional(string) cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
+| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. | ```object({ controlplanes = map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
 | network | Network for all nodes in CIDR notation, its prefix length is used for the node IP addresses | `string` | n/a | yes |
 | network\_gateway | Network gateway for all nodes | `string` | n/a | yes |
 | domain\_name\_servers | DNS servers for all nodes | `list(string)` | n/a | yes |

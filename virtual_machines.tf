@@ -1,6 +1,6 @@
 resource "proxmox_virtual_environment_vm" "kubernetes_control_plane" {
   for_each        = var.node_data.controlplanes
-  name            = local.controlplane_vm_names[each.key]
+  name            = each.value.hostname
   description     = "Kubernetes Control Plane"
   node_name       = local.controlplane_proxmox_nodes[each.key]
   started         = true
@@ -66,7 +66,7 @@ resource "proxmox_virtual_environment_vm" "kubernetes_control_plane" {
 
 resource "proxmox_virtual_environment_vm" "kubernetes_worker" {
   for_each        = var.node_data.workers
-  name            = local.worker_vm_names[each.key]
+  name            = each.value.hostname
   description     = "Kubernetes Worker Node"
   node_name       = local.worker_proxmox_nodes[each.key]
   started         = true
