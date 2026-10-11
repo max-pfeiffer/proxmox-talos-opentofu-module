@@ -6,6 +6,7 @@ A highly available Kubernetes cluster spread across a three node Proxmox VE clus
 * Talos machine configuration patch for registry mirrors on a Harbor pull-through cache
 * additional Cilium Helm values enabling Hubble Relay and UI, Cilium's Ingress controller disabled
 * the installed Talos version and Image Factory schematic defined once and shared by the ISO and installer images
+* a separate `helm` provider for rendering Cilium, so a default `helm` provider can deploy into the new cluster
 
 ## Prerequisites
 * [OpenTofu](https://opentofu.org/) >= 1.11.0

@@ -29,6 +29,10 @@ module "talos_cluster" {
   # version = "<version>"
   source = "../.."
 
+  providers = {
+    helm = helm.render
+  }
+
   # Proxmox
   proxmox_target_node    = "pve-0"
   proxmox_storage_device = "samsung-ssd"

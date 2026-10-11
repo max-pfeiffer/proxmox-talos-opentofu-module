@@ -84,6 +84,47 @@ output "kubeconfig" {
 The module is also available directly from GitHub, e.g. for unreleased changes:
 `source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.1.0"`. <!-- x-release-please-version -->
 
+### Providers
+The module declares its providers in `required_providers` but configures none of them, so it can be used with
+`count`, `for_each` and `depends_on` and removed without orphaning resources. Provider configuration belongs to your
+root module, a non-default configuration can be passed with the module's `providers` argument, e.g.
+`providers = { proxmox = proxmox.dc2 }`.
+
+The `bpg/proxmox` and `siderolabs/talos` provider versions are constrained to a single minor version, e.g.
+`~> 0.111.1`, because pre-1.0 providers ship breaking changes in minor releases. If your root module uses these
+providers elsewhere, it must use the same minor version. A module release bumping a provider minor version requires
+you to bump it as well.
+
+The `hashicorp/helm` provider is only used to render the Cilium manifest, it never connects to a cluster. If you
+configure your default `helm` provider with this module's `kubernetes_client_configuration` output, e.g. for
+deploying Helm releases into the new cluster, the module would use that provider too and OpenTofu fails with a
+dependency cycle. Pass the module a separate, unconfigured `helm` provider instead:
+```hcl
+# Only renders the Cilium manifest inside the module, needs no configuration
+provider "helm" {
+  alias = "render"
+}
+
+module "talos_cluster" {
+  source = "max-pfeiffer/talos-cluster/proxmox"
+  providers = {
+    helm = helm.render
+  }
+  # ...
+}
+
+# Deploys Helm releases into the new cluster
+provider "helm" {
+  kubernetes = {
+    host                   = module.talos_cluster.kubernetes_client_configuration.host
+    client_certificate     = base64decode(module.talos_cluster.kubernetes_client_configuration.client_certificate)
+    client_key             = base64decode(module.talos_cluster.kubernetes_client_configuration.client_key)
+    cluster_ca_certificate = base64decode(module.talos_cluster.kubernetes_client_configuration.ca_certificate)
+  }
+}
+```
+
+
 Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `install_disk` and `install_image` are required,
 `cpu_cores`, `memory` (MB), `disk_size` (GB) and `proxmox_node` are optional per node. The `hostname` is used as virtual
 machine name, Talos hostname and Kubernetes node name, so all three always match. It must be a unique lowercase
@@ -153,7 +194,7 @@ You might need to wait a bit until the nodes come up.
 | ---- | ----------- |
 | talosconfig | Talos client configuration for talosctl |
 | kubeconfig | Kubeconfig for cluster administration |
-| kubernetes\_client\_configuration | Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers |
+| kubernetes\_client\_configuration | Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers. Pass the module a separate helm provider then, see the Providers section of the README. |
 | client\_configuration | Talos client configuration (CA certificate, client certificate and key) |
 | machine\_secrets | Talos machine secrets of the cluster, keep them safe for disaster recovery |
 | cluster\_name | Name of the Talos cluster |

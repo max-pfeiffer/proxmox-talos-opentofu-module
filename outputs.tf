@@ -11,7 +11,7 @@ output "kubeconfig" {
 }
 
 output "kubernetes_client_configuration" {
-  description = "Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers"
+  description = "Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers. Pass the module a separate helm provider then, see the Providers section of the README."
   value       = talos_cluster_kubeconfig.this.kubernetes_client_configuration
   sensitive   = true
 }
