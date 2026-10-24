@@ -8,7 +8,7 @@ locals {
   controlplane_proxmox_nodes = { for ip, node in var.node_data.controlplanes : ip => coalesce(node.proxmox_node, var.proxmox_target_node) }
   worker_proxmox_nodes       = { for ip, node in var.node_data.workers : ip => coalesce(node.proxmox_node, var.proxmox_target_node) }
 
-  # The Talos ISO image is downloaded to every Proxmox node which hosts a virtual machine
+  # Proxmox nodes which host a virtual machine
   proxmox_nodes = toset(concat(values(local.controlplane_proxmox_nodes), values(local.worker_proxmox_nodes)))
 
   # Control plane IPs sorted numerically instead of lexically, e.g. 192.168.10.9 before 192.168.10.10

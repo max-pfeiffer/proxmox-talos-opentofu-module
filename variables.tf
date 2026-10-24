@@ -10,9 +10,15 @@ variable "proxmox_storage_device" {
 }
 
 variable "proxmox_iso_datastore" {
-  description = "Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type"
+  description = "Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type. Ignored when `talos_linux_iso_file_id` is set."
   type        = string
   default     = "local"
+}
+
+variable "proxmox_iso_download_node" {
+  description = "Proxmox node the Talos Linux ISO image is downloaded to once, for a `proxmox_iso_datastore` which is shared by all Proxmox nodes, e.g. NFS or CephFS. By default the image is downloaded to every Proxmox node which hosts a virtual machine. Ignored when `talos_linux_iso_file_id` is set."
+  type        = string
+  default     = null
 }
 
 variable "proxmox_network_bridge" {
@@ -48,15 +54,20 @@ variable "kubernetes_version" {
 }
 
 variable "talos_linux_iso_image_url" {
-  description = "URL of the Talos ISO image for initially booting the VM"
+  description = "URL of the Talos ISO image for initially booting the VM. It is downloaded as `talos-<cluster_name>-<URL hash>.iso`. Ignored when `talos_linux_iso_file_id` is set."
   type        = string
   default     = "https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"
 }
 
-variable "talos_linux_iso_image_filename" {
-  description = "Filename of the Talos ISO image for initially booting the VM"
+variable "talos_linux_iso_file_id" {
+  description = "ID of an existing Talos ISO image for initially booting the VM, e.g. `local:iso/talos-v1.13.8.iso`, which is managed outside of this module. It must be available on every Proxmox node which hosts a virtual machine. When set, the module does not download the image."
   type        = string
-  default     = "talos-linux-v1.13.8-qemu-guest-agent-amd64.iso"
+  default     = null
+
+  validation {
+    condition     = var.talos_linux_iso_file_id == null || can(regex("^[^:]+:iso/[^/]+$", var.talos_linux_iso_file_id))
+    error_message = "talos_linux_iso_file_id must be an ISO file ID in the format <datastore>:iso/<file name>."
+  }
 }
 
 variable "cluster_name" {

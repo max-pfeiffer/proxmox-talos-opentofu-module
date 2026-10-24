@@ -30,7 +30,7 @@ resource "proxmox_virtual_environment_vm" "kubernetes_control_plane" {
 
   cdrom {
     interface = "ide2"
-    file_id   = proxmox_download_file.talos_linux_iso_image[local.controlplane_proxmox_nodes[each.key]].id
+    file_id   = local.iso_file_ids[local.controlplane_proxmox_nodes[each.key]]
   }
 
   disk {
@@ -96,7 +96,7 @@ resource "proxmox_virtual_environment_vm" "kubernetes_worker" {
 
   cdrom {
     interface = "ide2"
-    file_id   = proxmox_download_file.talos_linux_iso_image[local.worker_proxmox_nodes[each.key]].id
+    file_id   = local.iso_file_ids[local.worker_proxmox_nodes[each.key]]
   }
 
   disk {

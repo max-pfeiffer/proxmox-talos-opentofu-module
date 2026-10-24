@@ -56,6 +56,16 @@ run "defaults" {
   }
 
   assert {
+    condition     = proxmox_download_file.talos_linux_iso_image["pve-0"].file_name == "talos-test-${substr(sha256(var.talos_linux_iso_image_url), 0, 12)}.iso"
+    error_message = "The ISO file name must be unique per cluster and image URL."
+  }
+
+  assert {
+    condition     = !proxmox_download_file.talos_linux_iso_image["pve-0"].overwrite_unmanaged
+    error_message = "An ISO file not managed by the cluster must never be overwritten."
+  }
+
+  assert {
     condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.102"].node_name == "pve-1"
     error_message = "proxmox_node must override proxmox_target_node."
   }
@@ -84,6 +94,53 @@ run "defaults" {
     condition     = length(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches) == 2
     error_message = "A node must get the base and the hostname patch."
   }
+}
+
+run "existing_iso_image" {
+  command = plan
+
+  variables {
+    talos_linux_iso_file_id = "nfs:iso/talos-v1.13.8.iso"
+  }
+
+  assert {
+    condition     = length(proxmox_download_file.talos_linux_iso_image) == 0
+    error_message = "No ISO image must be downloaded when an existing one is passed in."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.102"].cdrom[0].file_id == "nfs:iso/talos-v1.13.8.iso"
+    error_message = "Control planes must boot the existing ISO image."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].cdrom[0].file_id == "nfs:iso/talos-v1.13.8.iso"
+    error_message = "Workers must boot the existing ISO image."
+  }
+}
+
+run "shared_iso_datastore" {
+  command = plan
+
+  variables {
+    proxmox_iso_datastore     = "nfs"
+    proxmox_iso_download_node = "pve-0"
+  }
+
+  assert {
+    condition     = toset(keys(proxmox_download_file.talos_linux_iso_image)) == toset(["pve-0"])
+    error_message = "The ISO image must be downloaded once to a shared datastore."
+  }
+}
+
+run "rejects_invalid_iso_file_id" {
+  command = plan
+
+  variables {
+    talos_linux_iso_file_id = "talos.iso"
+  }
+
+  expect_failures = [var.talos_linux_iso_file_id]
 }
 
 run "optional_features" {
