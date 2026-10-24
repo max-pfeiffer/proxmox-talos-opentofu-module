@@ -10,9 +10,15 @@ variable "proxmox_storage_device" {
 }
 
 variable "proxmox_iso_datastore" {
-  description = "Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type"
+  description = "Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type. Ignored when `talos_linux_iso_file_id` is set."
   type        = string
   default     = "local"
+}
+
+variable "proxmox_iso_download_node" {
+  description = "Proxmox node the Talos Linux ISO image is downloaded to once, for a `proxmox_iso_datastore` which is shared by all Proxmox nodes, e.g. NFS or CephFS. By default the image is downloaded to every Proxmox node which hosts a virtual machine. Ignored when `talos_linux_iso_file_id` is set."
+  type        = string
+  default     = null
 }
 
 variable "proxmox_network_bridge" {
@@ -29,8 +35,17 @@ variable "vm_cpu_type" {
 
 # Talos Linux
 variable "talos_version" {
-  description = "Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster."
+  description = "Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. At least 1.12 is required for the HostnameConfig document."
   type        = string
+
+  validation {
+    condition = try(
+      tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[0]) > 1 ||
+      tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[1]) >= 12,
+      false
+    )
+    error_message = "talos_version must be 1.12 or newer, the module configures hostnames with the HostnameConfig document."
+  }
 }
 
 variable "kubernetes_version" {
@@ -39,19 +54,24 @@ variable "kubernetes_version" {
 }
 
 variable "talos_linux_iso_image_url" {
-  description = "URL of the Talos ISO image for initially booting the VM"
+  description = "URL of the Talos ISO image for initially booting the VM. It is downloaded as `talos-<cluster_name>-<URL hash>.iso`. Ignored when `talos_linux_iso_file_id` is set."
   type        = string
   default     = "https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"
 }
 
-variable "talos_linux_iso_image_filename" {
-  description = "Filename of the Talos ISO image for initially booting the VM"
+variable "talos_linux_iso_file_id" {
+  description = "ID of an existing Talos ISO image for initially booting the VM, e.g. `local:iso/talos-v1.13.8.iso`, which is managed outside of this module. It must be available on every Proxmox node which hosts a virtual machine. When set, the module does not download the image."
   type        = string
-  default     = "talos-linux-v1.13.8-qemu-guest-agent-amd64.iso"
+  default     = null
+
+  validation {
+    condition     = var.talos_linux_iso_file_id == null || can(regex("^[^:]+:iso/[^/]+$", var.talos_linux_iso_file_id))
+    error_message = "talos_linux_iso_file_id must be an ISO file ID in the format <datastore>:iso/<file name>."
+  }
 }
 
 variable "cluster_name" {
-  description = "A name to provide for the Talos cluster, it is also used as prefix for the virtual machine names"
+  description = "A name to provide for the Talos cluster"
   type        = string
   default     = "talos"
 }
@@ -68,24 +88,25 @@ variable "cluster_vip_shared_ip" {
 
 variable "node_data" {
   description = <<-EOT
-    Control plane and worker nodes, keyed by the node's IPv4 address. install_disk and install_image are required,
-    hostname, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
-    Without a hostname Talos Linux generates one itself. Without proxmox_node the VM is created on proxmox_target_node.
+    Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install_disk and install_image are
+    required, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
+    The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase
+    RFC 1123 DNS label. Without proxmox_node the VM is created on proxmox_target_node.
   EOT
   type = object({
     controlplanes = map(object({
+      hostname      = string
       install_disk  = string
       install_image = string
-      hostname      = optional(string)
       cpu_cores     = optional(number, 2)
       memory        = optional(number, 8192)
       disk_size     = optional(number, 50)
       proxmox_node  = optional(string)
     }))
     workers = optional(map(object({
+      hostname      = string
       install_disk  = string
       install_image = string
-      hostname      = optional(string)
       cpu_cores     = optional(number, 2)
       memory        = optional(number, 16384)
       disk_size     = optional(number, 50)
@@ -103,6 +124,20 @@ variable "node_data" {
       for ip in concat(keys(var.node_data.controlplanes), keys(var.node_data.workers)) : can(cidrhost("${ip}/32", 0))
     ])
     error_message = "All keys of node_data.controlplanes and node_data.workers must be valid IPv4 addresses."
+  }
+
+  validation {
+    condition = alltrue([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : can(regex("^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$", node.hostname))
+    ])
+    error_message = "All hostnames must be lowercase RFC 1123 DNS labels of at most 63 characters, e.g. talos-cp-0."
+  }
+
+  validation {
+    condition = length(distinct([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : node.hostname
+    ])) == length(var.node_data.controlplanes) + length(var.node_data.workers)
+    error_message = "All hostnames must be unique."
   }
 }
 

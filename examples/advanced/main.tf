@@ -24,7 +24,14 @@ locals {
 }
 
 module "talos_cluster" {
+  # Outside of this repository use the registry instead:
+  # source  = "max-pfeiffer/talos-cluster/proxmox"
+  # version = "<version>"
   source = "../.."
+
+  providers = {
+    helm = helm.render
+  }
 
   # Proxmox
   proxmox_target_node    = "pve-0"
@@ -35,10 +42,11 @@ module "talos_cluster" {
   # Talos Linux
   # talos_version is the machine configuration contract, pin it to the version the cluster was created with.
   # The installed Talos version is driven by install_image.
-  talos_version                  = "1.13.8"
-  kubernetes_version             = "1.36.3"
-  talos_linux_iso_image_url      = "https://factory.talos.dev/image/${local.talos_schematic_id}/${local.talos_installed_version}/nocloud-amd64.iso"
-  talos_linux_iso_image_filename = "talos-linux-${local.talos_installed_version}-qemu-guest-agent-amd64.iso"
+  talos_version             = "1.13.8"
+  kubernetes_version        = "1.36.3"
+  talos_linux_iso_image_url = "https://factory.talos.dev/image/${local.talos_schematic_id}/${local.talos_installed_version}/nocloud-amd64.iso"
+  # Alternatively pass an ISO image managed outside of this module, e.g. shared by several clusters:
+  # talos_linux_iso_file_id = "local:iso/talos-${local.talos_installed_version}.iso"
 
   cluster_name          = "your-cluster-name"
   cluster_vip_shared_ip = "192.168.10.100"

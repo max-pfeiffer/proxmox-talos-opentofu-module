@@ -25,6 +25,19 @@ The module creates one virtual machine per node, downloads the Talos Linux ISO i
 a virtual machine, applies the Talos machine configuration, bootstraps the cluster and returns `kubeconfig` and
 `talosconfig`.
 
+### Talos Linux ISO image
+By default the module downloads the ISO image from `talos_linux_iso_image_url` to `proxmox_iso_datastore` on every
+Proxmox node which hosts a virtual machine. The file is named `talos-<cluster_name>-<URL hash>.iso`, so several
+clusters on the same Proxmox VE host each manage their own file and never delete or overwrite the image of another
+cluster. A file with the same name which is not managed by the cluster fails the apply instead of being replaced,
+so give every cluster on a Proxmox VE host a unique `cluster_name`.
+
+* For a datastore shared by all Proxmox nodes, e.g. NFS or CephFS, set `proxmox_iso_download_node` to download the
+  image only once.
+* To share one image between clusters, manage it outside of this module, e.g. with a `proxmox_download_file`
+  resource in a separate root module, and pass its ID with `talos_linux_iso_file_id`. The module then downloads
+  nothing, and destroying a cluster leaves the image in place.
+
 ## Requirements
 * [OpenTofu](https://opentofu.org/) >= 1.11.0
 * A Proxmox VE API token with permissions to manage virtual machines, storage and downloads
@@ -42,7 +55,8 @@ provider "proxmox" {
 }
 
 module "talos_cluster" {
-  source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.1.0" # x-release-please-version
+  source  = "max-pfeiffer/talos-cluster/proxmox"
+  version = "0.1.0" # x-release-please-version
 
   proxmox_target_node    = "your-proxmox-node"
   proxmox_storage_device = "local-lvm"
@@ -80,14 +94,67 @@ output "kubeconfig" {
   sensitive = true
 }
 ```
-Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `cpu_cores`, `memory` (MB), `disk_size` (GB) and
-`proxmox_node` are optional per node. Without a `hostname` Talos Linux generates one itself, without a `proxmox_node`
-the virtual machine is created on `proxmox_target_node`.
+The module is also available directly from GitHub, e.g. for unreleased changes:
+`source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.1.0"`. <!-- x-release-please-version -->
 
-Complete examples are in the [examples](examples) directory:
-* [basic](examples/basic): one control plane and one worker node
-* [advanced](examples/advanced): highly available control plane spread across a Proxmox cluster, VLAN, config
-  patches for registry mirrors and additional Cilium Helm values
+### Providers
+The module declares its providers in `required_providers` but configures none of them, so it can be used with
+`count`, `for_each` and `depends_on` and removed without orphaning resources. Provider configuration belongs to your
+root module, a non-default configuration can be passed with the module's `providers` argument, e.g.
+`providers = { proxmox = proxmox.dc2 }`.
+
+The `bpg/proxmox` and `siderolabs/talos` provider versions are constrained to a single minor version, e.g.
+`~> 0.111.1`, because pre-1.0 providers ship breaking changes in minor releases. If your root module uses these
+providers elsewhere, it must use the same minor version. A module release bumping a provider minor version requires
+you to bump it as well.
+
+The `hashicorp/helm` provider is only used to render the Cilium manifest, it never connects to a cluster. If you
+configure your default `helm` provider with this module's `kubernetes_client_configuration` output, e.g. for
+deploying Helm releases into the new cluster, the module would use that provider too and OpenTofu fails with a
+dependency cycle. Pass the module a separate, unconfigured `helm` provider instead:
+```hcl
+# Only renders the Cilium manifest inside the module, needs no configuration
+provider "helm" {
+  alias = "render"
+}
+
+module "talos_cluster" {
+  source = "max-pfeiffer/talos-cluster/proxmox"
+  providers = {
+    helm = helm.render
+  }
+  # ...
+}
+
+# Deploys Helm releases into the new cluster
+provider "helm" {
+  kubernetes = {
+    host                   = module.talos_cluster.kubernetes_client_configuration.host
+    client_certificate     = base64decode(module.talos_cluster.kubernetes_client_configuration.client_certificate)
+    client_key             = base64decode(module.talos_cluster.kubernetes_client_configuration.client_key)
+    cluster_ca_certificate = base64decode(module.talos_cluster.kubernetes_client_configuration.ca_certificate)
+  }
+}
+```
+
+
+Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `install_disk` and `install_image` are required,
+`cpu_cores`, `memory` (MB), `disk_size` (GB) and `proxmox_node` are optional per node. The `hostname` is used as virtual
+machine name, Talos hostname and Kubernetes node name, so all three always match. It must be a unique lowercase
+RFC 1123 DNS label of at most 63 characters. Without a `proxmox_node` the virtual machine is created on
+`proxmox_target_node`.
+
+The control plane node with the lowest IP address is used to bootstrap the cluster, run Kubernetes upgrades and
+retrieve the kubeconfig. It is chosen once on creation, adding control plane nodes later does not change it. If you
+remove that node, move this role to another control plane node:
+```shell
+tofu apply -replace=module.talos_cluster.talos_cluster.this -replace=module.talos_cluster.talos_cluster_kubeconfig.this
+```
+
+Complete examples are in the [examples](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/tree/main/examples) directory:
+* [basic](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/tree/main/examples/basic): one control plane and one worker node
+* [advanced](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/tree/main/examples/advanced): highly available control plane spread across a Proxmox cluster, VLAN,
+  config patches for registry mirrors and additional Cilium Helm values
 
 Apply the configuration and grab the kube config file:
 ```shell
@@ -110,16 +177,17 @@ You might need to wait a bit until the nodes come up.
 | ---- | ----------- | ---- | ------- | :------: |
 | proxmox\_target\_node | Name of the Proxmox VE node the virtual machines are created on. Can be overridden per node with `proxmox_node` in `node_data`. | `string` | n/a | yes |
 | proxmox\_storage\_device | Proxmox datastore for the virtual machine disks and the cloud-init drives | `string` | n/a | yes |
-| proxmox\_iso\_datastore | Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type | `string` | `"local"` | no |
+| proxmox\_iso\_datastore | Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type. Ignored when `talos_linux_iso_file_id` is set. | `string` | `"local"` | no |
+| proxmox\_iso\_download\_node | Proxmox node the Talos Linux ISO image is downloaded to once, for a `proxmox_iso_datastore` which is shared by all Proxmox nodes, e.g. NFS or CephFS. By default the image is downloaded to every Proxmox node which hosts a virtual machine. Ignored when `talos_linux_iso_file_id` is set. | `string` | `null` | no |
 | proxmox\_network\_bridge | Proxmox network bridge the virtual machines are attached to | `string` | `"vmbr0"` | no |
 | vm\_cpu\_type | CPU type emulated for the virtual machines | `string` | `"host"` | no |
-| talos\_version | Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. | `string` | n/a | yes |
+| talos\_version | Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. At least 1.12 is required for the HostnameConfig document. | `string` | n/a | yes |
 | kubernetes\_version | Kubernetes version of the cluster, changing it runs Talos' upgrade-k8s procedure. Required so that a module upgrade never upgrades Kubernetes implicitly. | `string` | n/a | yes |
-| talos\_linux\_iso\_image\_url | URL of the Talos ISO image for initially booting the VM | `string` | `"https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"` | no |
-| talos\_linux\_iso\_image\_filename | Filename of the Talos ISO image for initially booting the VM | `string` | `"talos-linux-v1.13.8-qemu-guest-agent-amd64.iso"` | no |
-| cluster\_name | A name to provide for the Talos cluster, it is also used as prefix for the virtual machine names | `string` | `"talos"` | no |
+| talos\_linux\_iso\_image\_url | URL of the Talos ISO image for initially booting the VM. It is downloaded as `talos-<cluster_name>-<URL hash>.iso`. Ignored when `talos_linux_iso_file_id` is set. | `string` | `"https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"` | no |
+| talos\_linux\_iso\_file\_id | ID of an existing Talos ISO image for initially booting the VM, e.g. `local:iso/talos-v1.13.8.iso`, which is managed outside of this module. It must be available on every Proxmox node which hosts a virtual machine. When set, the module does not download the image. | `string` | `null` | no |
+| cluster\_name | A name to provide for the Talos cluster | `string` | `"talos"` | no |
 | cluster\_vip\_shared\_ip | Shared virtual IP address for control plane nodes, used as Kubernetes API endpoint | `string` | n/a | yes |
-| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. install\_disk and install\_image are required, hostname, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. Without a hostname Talos Linux generates one itself. Without proxmox\_node the VM is created on proxmox\_target\_node. | ```object({ controlplanes = map(object({ install_disk = string install_image = string hostname = optional(string) cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ install_disk = string install_image = string hostname = optional(string) cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
+| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. | ```object({ controlplanes = map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
 | network | Network for all nodes in CIDR notation, its prefix length is used for the node IP addresses | `string` | n/a | yes |
 | network\_gateway | Network gateway for all nodes | `string` | n/a | yes |
 | domain\_name\_servers | DNS servers for all nodes | `list(string)` | n/a | yes |
@@ -140,7 +208,7 @@ You might need to wait a bit until the nodes come up.
 | ---- | ----------- |
 | talosconfig | Talos client configuration for talosctl |
 | kubeconfig | Kubeconfig for cluster administration |
-| kubernetes\_client\_configuration | Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers |
+| kubernetes\_client\_configuration | Kubernetes API host and client credentials, e.g. for configuring the kubernetes and helm providers. Pass the module a separate helm provider then, see the Providers section of the README. |
 | client\_configuration | Talos client configuration (CA certificate, client certificate and key) |
 | machine\_secrets | Talos machine secrets of the cluster, keep them safe for disaster recovery |
 | cluster\_name | Name of the Talos cluster |
@@ -168,8 +236,9 @@ the Talos provider — see [siderolabs/terraform-provider-talos#140](https://git
 for the multi-year discussion on graceful, node-by-node upgrades.
 
 ### Upgrading Talos
-1. Pick the new Talos version and update `talos_linux_iso_image_url` and
-   `talos_linux_iso_image_filename`.
+1. Pick the new Talos version and update `talos_linux_iso_image_url`, or `talos_linux_iso_file_id` for
+   an ISO image managed outside of this module. The new ISO image only affects newly created virtual
+   machines.
 2. For every node in `node_data`, update `install_image` to the matching version tag, e.g.
    `factory.talos.dev/nocloud-installer/<schematic-id>:v1.14.0`. The schematic ID stays the same
    across versions unless you change the extensions baked into the image on the
@@ -215,7 +284,7 @@ for the multi-year discussion on graceful, node-by-node upgrades.
 The module follows [Semantic Versioning](https://semver.org/), releases are tagged `vX.Y.Z` and created by
 [release-please](https://github.com/googleapis/release-please) from [Conventional Commits](https://www.conventionalcommits.org/).
 While the module is below `1.0.0`, breaking changes bump the minor version and everything else the patch version.
-Pin the module to an exact tag with `?ref=` and read the [changelog](CHANGELOG.md) before upgrading.
+Pin the module to an exact `version` and read the [changelog](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/blob/main/CHANGELOG.md) before upgrading.
 
 A change is breaking (`feat!:` or a `BREAKING CHANGE:` footer) if it changes infrastructure that existing users get
 on their next `tofu apply` without touching their configuration, in particular:
@@ -229,8 +298,12 @@ on their next `tofu apply` without touching their configuration, in particular:
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), [OpenTofu](https://opentofu.org/docs/intro/install/),
 [TFLint](https://github.com/terraform-linters/tflint) and [terraform-docs](https://terraform-docs.io/), e.g. on macOS:
 ```shell
-brew install uv opentofu tflint terraform-docs
+brew install uv opentofu terraform-docs terraform-linters/tap/tflint
 ```
+TFLint is not available in Homebrew's core repository, it is installed from the
+[official TFLint tap](https://github.com/terraform-linters/homebrew-tap). For other platforms see the
+[TFLint installation instructions](https://github.com/terraform-linters/tflint#installation).
+
 Sync dependencies and install the git hooks:
 ```shell
 uv sync

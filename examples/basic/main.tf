@@ -1,4 +1,7 @@
 module "talos_cluster" {
+  # Outside of this repository use the registry instead:
+  # source  = "max-pfeiffer/talos-cluster/proxmox"
+  # version = "<version>"
   source = "../.."
 
   proxmox_target_node    = "your-proxmox-node"
