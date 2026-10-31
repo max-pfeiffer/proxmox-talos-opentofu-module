@@ -14,7 +14,7 @@ Kubernetes cluster features:
 * [Cilium v1.20.0](https://cilium.io/) as Container Network Interface (CNI)
   * without kube-proxy
   * with [L2 loadbalancer support](https://docs.cilium.io/en/stable/network/l2-announcements/)
-  * with [Ingress controller support](https://docs.cilium.io/en/stable/network/servicemesh/ingress/) (optional)
+  * with [Ingress controller support](https://docs.cilium.io/en/stable/network/servicemesh/ingress/) (optional, disabled by default)
   * with [Gateway API support](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/)
   * with [Egress gateway support](https://docs.cilium.io/en/stable/network/egress-gateway/egress-gateway/)
 * [Gateway API v1.6.1](https://gateway-api.sigs.k8s.io/) CRDs (standard channel) are installed (optional)
@@ -203,7 +203,7 @@ You might need to wait a bit until the nodes come up.
 | extra\_inline\_manifests | Additional Kubernetes manifests which are applied by Talos on bootstrap, see https://www.talos.dev/latest/reference/configuration/v1alpha1/config/#Config.cluster.inlineManifests | ```list(object({ name = string contents = string }))``` | `[]` | no |
 | gateway\_api\_crds\_enabled | Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, required by Cilium's Gateway API support | `bool` | `true` | no |
 | cilium\_version | Version of the Cilium Helm chart | `string` | `"1.20.0"` | no |
-| ingress\_controller\_enabled | Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/ | `bool` | `true` | no |
+| ingress\_controller\_enabled | Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/. Disabled by default, the Gateway API supersedes it and its shared LoadBalancer Service takes an address of the LoadBalancer IP pool. | `bool` | `false` | no |
 | cilium\_helm\_set | Additional Helm values for Cilium, applied after the module's defaults so they can override them | ```list(object({ name = string value = string type = optional(string) }))``` | `[]` | no |
 | cilium\_helm\_values | Additional Helm values for Cilium as YAML documents | `list(string)` | `[]` | no |
 
@@ -284,6 +284,18 @@ for the multi-year discussion on graceful, node-by-node upgrades.
    the version tag is stripped from the hash, so a registry change is still detected as drift.
 4. A plain `tofu apply` is safe here — `talos_cluster` does the sequencing and health gating itself,
    so `-parallelism=1` is not needed for this step.
+
+### Changing the Cilium configuration
+Cilium is installed as a Talos inline manifest. Talos only creates missing resources of inline manifests, it never
+updates or deletes existing ones, so changing a Cilium input like `ingress_controller_enabled` or `cilium_helm_set`
+only changes the machine configuration of the control plane nodes. Synchronize the manifests of a running cluster
+afterwards with Talos' Kubernetes upgrade procedure and the current Kubernetes version, which also prunes removed
+resources (Talos >= v1.13, talosctl must match the Talos version), and restart Cilium to load its new configuration:
+```shell
+talosctl -n <control plane node> upgrade-k8s --to <current Kubernetes version> --dry-run
+talosctl -n <control plane node> upgrade-k8s --to <current Kubernetes version>
+kubectl -n kube-system rollout restart deployment/cilium-operator daemonset/cilium daemonset/cilium-envoy
+```
 
 ## Versioning
 The module follows [Semantic Versioning](https://semver.org/), releases are tagged `vX.Y.Z` and created by

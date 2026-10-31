@@ -223,9 +223,9 @@ variable "cilium_version" {
 }
 
 variable "ingress_controller_enabled" {
-  description = "Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/"
+  description = "Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/. Disabled by default, the Gateway API supersedes it and its shared LoadBalancer Service takes an address of the LoadBalancer IP pool."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "cilium_helm_set" {

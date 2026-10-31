@@ -94,6 +94,11 @@ run "defaults" {
     condition     = length(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches) == 2
     error_message = "A node must get the base and the hostname patch."
   }
+
+  assert {
+    condition     = !contains([for s in data.helm_template.cilium.set : s.name], "ingressController.enabled")
+    error_message = "The Cilium Ingress controller must be disabled by default."
+  }
 }
 
 run "existing_iso_image" {
@@ -170,6 +175,22 @@ run "optional_features" {
   assert {
     condition     = length(data.talos_machine_configuration.worker["192.168.10.103"].config_patches) == 2
     error_message = "An empty worker patch must not be appended."
+  }
+}
+
+run "ingress_controller" {
+  command = plan
+
+  variables {
+    ingress_controller_enabled = true
+  }
+
+  assert {
+    condition = alltrue([
+      for name in ["ingressController.enabled", "ingressController.loadbalancerMode"] :
+      contains([for s in data.helm_template.cilium.set : s.name], name)
+    ])
+    error_message = "The enabled Cilium Ingress controller must be configured."
   }
 }
 
