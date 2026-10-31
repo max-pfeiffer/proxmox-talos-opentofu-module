@@ -10,7 +10,6 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-added-large-files
-        args: ['--maxkb=2048']
   # Requires tofu, tflint and terraform-docs on the PATH
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.109.2

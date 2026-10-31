@@ -1,6 +1,8 @@
 machine:
   features:
     hostDNS:
+      # Cilium's bpf.masquerade breaks DNS forwarding to the host, see
+      # https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
       forwardKubeDNSToHost: false
   install:
     disk: ${install_disk}

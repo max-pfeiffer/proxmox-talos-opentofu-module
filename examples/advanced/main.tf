@@ -112,7 +112,6 @@ module "talos_cluster" {
   talos_machine_config_patch_worker       = local.registry_mirrors_patch
 
   # Cilium
-  ingress_controller_enabled = false
   cilium_helm_set = [
     {
       name  = "hubble.relay.enabled"

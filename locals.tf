@@ -23,14 +23,17 @@ locals {
   # Talos API endpoint for bootstrapping, Kubernetes upgrades and retrieving the kubeconfig
   bootstrap_node = local.controlplane_ips_sorted[0]
 
+  # Gateway API CRDs (standard channel), updated by Renovate
+  gateway_api_version = "v1.6.1"
+
+  # Manifests downloaded by the control plane nodes on bootstrap. Talos applies them together with the inline
+  # manifests and applies CRDs first, so the Gateway API CRDs exist when Cilium starts.
+  extra_manifests = var.gateway_api_crds_enabled ? [
+    "https://github.com/kubernetes-sigs/gateway-api/releases/download/${local.gateway_api_version}/standard-install.yaml",
+  ] : []
+
   # Manifests applied by Talos on bootstrap, the order is preserved
   inline_manifests = concat(
-    var.gateway_api_crds_enabled ? [
-      {
-        name     = "gateway-api"
-        contents = file("${path.module}/gateway-api/gateway-api-crds-v1.6.1.yaml")
-      },
-    ] : [],
     [
       {
         name     = "cilium"

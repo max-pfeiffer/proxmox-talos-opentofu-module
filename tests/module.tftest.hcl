@@ -86,13 +86,52 @@ run "defaults" {
   }
 
   assert {
-    condition     = [for m in local.inline_manifests : m.name] == ["gateway-api", "cilium"]
-    error_message = "Gateway API CRDs must be applied before Cilium."
+    condition     = [for m in local.inline_manifests : m.name] == ["cilium"]
+    error_message = "Cilium must be the only inline manifest by default."
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "extraManifests:\n    - https://github.com/kubernetes-sigs/gateway-api/releases/download/${local.gateway_api_version}/standard-install.yaml\n")
+    error_message = "Control planes must download the Gateway API CRDs of the pinned version."
+  }
+
+  assert {
+    condition     = !strcontains(data.talos_machine_configuration.worker["192.168.10.103"].config_patches[0], "extraManifests")
+    error_message = "Workers must not download extra manifests."
   }
 
   assert {
     condition     = length(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches) == 2
     error_message = "A node must get the base and the hostname patch."
+  }
+
+  assert {
+    condition     = !contains(keys(local.cilium_values), "ingressController")
+    error_message = "The Cilium Ingress controller must be disabled by default."
+  }
+
+  assert {
+    condition     = data.helm_template.cilium.values[0] == yamlencode(local.cilium_values)
+    error_message = "The module's Cilium defaults must be the first values document, so cilium_helm_values can override them."
+  }
+
+  assert {
+    condition = alltrue([
+      local.cilium_values.rollOutCiliumPods,
+      local.cilium_values.operator.rollOutPods,
+      local.cilium_values.envoy.rollOutPods,
+    ])
+    error_message = "Cilium pods must be rolled out when their configuration changes."
+  }
+
+  assert {
+    condition     = local.cilium_values.operator.replicas == 2
+    error_message = "Clusters with several nodes must run two Cilium operator replicas."
+  }
+
+  assert {
+    condition     = local.cilium_values.gatewayAPI.enabled
+    error_message = "Cilium's Gateway API support must be enabled by default."
   }
 }
 
@@ -159,7 +198,12 @@ run "optional_features" {
 
   assert {
     condition     = [for m in local.inline_manifests : m.name] == ["cilium", "extra"]
-    error_message = "Disabled Gateway API CRDs must be omitted and extra manifests appended."
+    error_message = "Extra inline manifests must be appended."
+  }
+
+  assert {
+    condition     = !strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "extraManifests")
+    error_message = "Disabled Gateway API CRDs must not be downloaded."
   }
 
   assert {
@@ -171,6 +215,122 @@ run "optional_features" {
     condition     = length(data.talos_machine_configuration.worker["192.168.10.103"].config_patches) == 2
     error_message = "An empty worker patch must not be appended."
   }
+}
+
+run "ingress_controller" {
+  command = plan
+
+  variables {
+    ingress_controller_enabled = true
+  }
+
+  assert {
+    condition     = local.cilium_values.ingressController == { enabled = true, loadbalancerMode = "dedicated" }
+    error_message = "The enabled Cilium Ingress controller must be configured."
+  }
+}
+
+run "single_node_cluster" {
+  command = plan
+
+  variables {
+    allow_scheduling_on_control_planes = true
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = local.cilium_values.operator.replicas == 1
+    error_message = "A single node cluster must run one Cilium operator replica."
+  }
+}
+
+run "gateway_api_disabled" {
+  command = plan
+
+  variables {
+    gateway_api_enabled = false
+  }
+
+  assert {
+    condition     = !local.cilium_values.gatewayAPI.enabled
+    error_message = "Cilium's Gateway API support must be disableable."
+  }
+}
+
+run "cilium_helm_values_override_defaults" {
+  command = plan
+
+  variables {
+    cilium_helm_values = ["bpf:\n  masquerade: false\n"]
+    cilium_helm_set = [
+      {
+        name  = "hubble.relay.enabled"
+        value = "true"
+      },
+    ]
+  }
+
+  assert {
+    condition     = tolist(data.helm_template.cilium.values) == tolist([yamlencode(local.cilium_values), "bpf:\n  masquerade: false\n"])
+    error_message = "cilium_helm_values must be applied after the module's defaults."
+  }
+
+  assert {
+    condition     = [for s in data.helm_template.cilium.set : s.name] == ["hubble.relay.enabled"]
+    error_message = "cilium_helm_set must only contain the user's values."
+  }
+}
+
+run "rejects_untested_kubernetes_version" {
+  command = plan
+
+  variables {
+    kubernetes_version = "1.40.0"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "rejects_unknown_cilium_minor_version" {
+  command = plan
+
+  variables {
+    cilium_version = "1.99.0"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "skips_kubernetes_compatibility_check" {
+  command = plan
+
+  variables {
+    kubernetes_version                    = "1.40.0"
+    cilium_kubernetes_compatibility_check = false
+  }
+
+  assert {
+    condition     = local.kubernetes_minor_version == "1.40"
+    error_message = "The Kubernetes minor version must be derived from kubernetes_version."
+  }
+}
+
+run "rejects_invalid_kubernetes_version" {
+  command = plan
+
+  variables {
+    kubernetes_version = "latest"
+  }
+
+  expect_failures = [var.kubernetes_version]
 }
 
 run "rejects_invalid_node_ip" {

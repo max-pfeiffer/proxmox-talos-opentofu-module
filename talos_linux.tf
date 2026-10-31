@@ -37,6 +37,7 @@ data "talos_machine_configuration" "controlplane" {
         network_gateway                    = var.network_gateway
         vip_shared_ip                      = var.cluster_vip_shared_ip
         allow_scheduling_on_control_planes = var.allow_scheduling_on_control_planes
+        extra_manifests                    = local.extra_manifests
         inline_manifests                   = local.inline_manifests
       }),
       templatefile("${path.module}/templates/machine_config_patch_hostname.tftpl", {

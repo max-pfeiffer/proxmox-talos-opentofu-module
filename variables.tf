@@ -51,6 +51,11 @@ variable "talos_version" {
 variable "kubernetes_version" {
   description = "Kubernetes version of the cluster, changing it runs Talos' upgrade-k8s procedure. Required so that a module upgrade never upgrades Kubernetes implicitly."
   type        = string
+
+  validation {
+    condition     = can(regex("^v?\\d+\\.\\d+\\.\\d+$", var.kubernetes_version))
+    error_message = "kubernetes_version must be a semantic version, e.g. 1.36.3."
+  }
 }
 
 variable "talos_linux_iso_image_url" {
@@ -210,7 +215,13 @@ variable "extra_inline_manifests" {
 
 # Gateway API
 variable "gateway_api_crds_enabled" {
-  description = "Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, required by Cilium's Gateway API support"
+  description = "Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway_api_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
+  type        = bool
+  default     = true
+}
+
+variable "gateway_api_enabled" {
+  description = "Enables Cilium's Gateway API support, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
   type        = bool
   default     = true
 }
@@ -220,16 +231,27 @@ variable "cilium_version" {
   description = "Version of the Cilium Helm chart"
   type        = string
   default     = "1.20.0"
+
+  validation {
+    condition     = can(regex("^v?\\d+\\.\\d+\\.\\d+", var.cilium_version))
+    error_message = "cilium_version must be a semantic version, e.g. 1.20.0."
+  }
 }
 
-variable "ingress_controller_enabled" {
-  description = "Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/"
+variable "cilium_kubernetes_compatibility_check" {
+  description = "Fails the plan if the Cilium minor version is not e2e tested with the Kubernetes minor version, see https://docs.cilium.io/en/stable/network/kubernetes/compatibility/. Disable it to run an untested combination deliberately."
   type        = bool
   default     = true
 }
 
+variable "ingress_controller_enabled" {
+  description = "Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/. Disabled by default, the Gateway API supersedes it and its shared LoadBalancer Service takes an address of the LoadBalancer IP pool."
+  type        = bool
+  default     = false
+}
+
 variable "cilium_helm_set" {
-  description = "Additional Helm values for Cilium, applied after the module's defaults so they can override them"
+  description = "Additional Helm values for Cilium, applied after the module's defaults and cilium_helm_values so they override both"
   type = list(object({
     name  = string
     value = string
@@ -239,7 +261,7 @@ variable "cilium_helm_set" {
 }
 
 variable "cilium_helm_values" {
-  description = "Additional Helm values for Cilium as YAML documents"
+  description = "Additional Helm values for Cilium as YAML documents, applied in order after the module's defaults so they can override them"
   type        = list(string)
   default     = []
 }
