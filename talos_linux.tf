@@ -11,6 +11,14 @@ ephemeral "talos_cluster_kubeconfig" "drain" {
   endpoint        = local.cluster_endpoint
 }
 
+# The talos_machine instances read the kubeconfig through this local instead of the
+# ephemeral resource directly. OpenTofu mutates shared marks when several resources
+# evaluate the same ephemeral resource concurrently during plan, which crashes with
+# "concurrent map writes". A local is evaluated exactly once.
+locals {
+  drain_kubeconfig = ephemeral.talos_cluster_kubeconfig.drain.kubeconfig_raw
+}
+
 data "talos_machine_configuration" "controlplane" {
   for_each           = var.node_data.controlplanes
   cluster_name       = var.cluster_name
@@ -71,20 +79,81 @@ data "talos_client_configuration" "this" {
   nodes                = concat(keys(var.node_data.controlplanes), keys(var.node_data.workers))
 }
 
-resource "talos_machine" "controlplane" {
+# Control planes are upgraded one at a time to keep etcd quorum. Instances of one for_each
+# run in parallel and cannot depend on each other, so every position in
+# local.controlplane_ips_sorted gets its own block, chained with depends_on. Talos reports a
+# control plane ready only with etcd healthy, so the next node reboots after quorum is back.
+# The number of blocks caps node_data.controlplanes, see its validation.
+resource "talos_machine" "controlplane_0" {
   depends_on = [proxmox_virtual_environment_vm.kubernetes_control_plane]
-  for_each   = var.node_data.controlplanes
+  for_each   = { for ip, node in var.node_data.controlplanes : ip => node if local.controlplane_positions[ip] == 0 }
 
   node                  = each.key
   client_configuration  = talos_machine_secrets.this.client_configuration
   machine_configuration = data.talos_machine_configuration.controlplane[each.key].machine_configuration
   image                 = each.value.install_image
   drain_on_upgrade      = true
-  kubeconfig_wo         = ephemeral.talos_cluster_kubeconfig.drain.kubeconfig_raw
+  kubeconfig_wo         = local.drain_kubeconfig
 
   # Kubernetes component image tags are owned by talos_cluster, which upgrades them
   # through Talos' sequential, health-gated upgrade-k8s procedure. Excluding them from
   # drift detection keeps this resource from re-applying them in parallel and bypassing it.
+  ignore_kubernetes_upgrade_drift = true
+}
+
+resource "talos_machine" "controlplane_1" {
+  depends_on = [talos_machine.controlplane_0]
+  for_each   = { for ip, node in var.node_data.controlplanes : ip => node if local.controlplane_positions[ip] == 1 }
+
+  node                  = each.key
+  client_configuration  = talos_machine_secrets.this.client_configuration
+  machine_configuration = data.talos_machine_configuration.controlplane[each.key].machine_configuration
+  image                 = each.value.install_image
+  drain_on_upgrade      = true
+  kubeconfig_wo         = local.drain_kubeconfig
+
+  ignore_kubernetes_upgrade_drift = true
+}
+
+resource "talos_machine" "controlplane_2" {
+  depends_on = [talos_machine.controlplane_1]
+  for_each   = { for ip, node in var.node_data.controlplanes : ip => node if local.controlplane_positions[ip] == 2 }
+
+  node                  = each.key
+  client_configuration  = talos_machine_secrets.this.client_configuration
+  machine_configuration = data.talos_machine_configuration.controlplane[each.key].machine_configuration
+  image                 = each.value.install_image
+  drain_on_upgrade      = true
+  kubeconfig_wo         = local.drain_kubeconfig
+
+  ignore_kubernetes_upgrade_drift = true
+}
+
+resource "talos_machine" "controlplane_3" {
+  depends_on = [talos_machine.controlplane_2]
+  for_each   = { for ip, node in var.node_data.controlplanes : ip => node if local.controlplane_positions[ip] == 3 }
+
+  node                  = each.key
+  client_configuration  = talos_machine_secrets.this.client_configuration
+  machine_configuration = data.talos_machine_configuration.controlplane[each.key].machine_configuration
+  image                 = each.value.install_image
+  drain_on_upgrade      = true
+  kubeconfig_wo         = local.drain_kubeconfig
+
+  ignore_kubernetes_upgrade_drift = true
+}
+
+resource "talos_machine" "controlplane_4" {
+  depends_on = [talos_machine.controlplane_3]
+  for_each   = { for ip, node in var.node_data.controlplanes : ip => node if local.controlplane_positions[ip] == 4 }
+
+  node                  = each.key
+  client_configuration  = talos_machine_secrets.this.client_configuration
+  machine_configuration = data.talos_machine_configuration.controlplane[each.key].machine_configuration
+  image                 = each.value.install_image
+  drain_on_upgrade      = true
+  kubeconfig_wo         = local.drain_kubeconfig
+
   ignore_kubernetes_upgrade_drift = true
 }
 
@@ -97,7 +166,7 @@ resource "talos_machine" "worker" {
   machine_configuration = data.talos_machine_configuration.worker[each.key].machine_configuration
   image                 = each.value.install_image
   drain_on_upgrade      = true
-  kubeconfig_wo         = ephemeral.talos_cluster_kubeconfig.drain.kubeconfig_raw
+  kubeconfig_wo         = local.drain_kubeconfig
 
   ignore_kubernetes_upgrade_drift = true
 }
@@ -111,7 +180,13 @@ resource "talos_machine" "worker" {
 # After removing that node, move it explicitly with
 # tofu apply -replace=<module>.talos_cluster.this -replace=<module>.talos_cluster_kubeconfig.this
 resource "talos_cluster" "this" {
-  depends_on = [talos_machine.controlplane]
+  depends_on = [
+    talos_machine.controlplane_0,
+    talos_machine.controlplane_1,
+    talos_machine.controlplane_2,
+    talos_machine.controlplane_3,
+    talos_machine.controlplane_4,
+  ]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = local.bootstrap_node
