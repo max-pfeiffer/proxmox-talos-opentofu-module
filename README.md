@@ -57,7 +57,7 @@ provider "proxmox" {
 
 module "talos_cluster" {
   source  = "max-pfeiffer/talos-cluster/proxmox"
-  version = "0.2.0" # x-release-please-version
+  version = "0.3.0" # x-release-please-version
 
   proxmox_target_node    = "your-proxmox-node"
   proxmox_storage_device = "local-lvm"
@@ -96,7 +96,7 @@ output "kubeconfig" {
 }
 ```
 The module is also available directly from GitHub, e.g. for unreleased changes:
-`source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.2.0"`. <!-- x-release-please-version -->
+`source = "git::https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster.git?ref=v0.3.0"`. <!-- x-release-please-version -->
 
 ### Providers
 The module declares its providers in `required_providers` but configures none of them, so it can be used with

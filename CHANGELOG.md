@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.2.0...v0.3.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* download gateway api crds instead of bundling them
+* check cilium kubernetes compatibility and roll out config changes
+
+### Features
+
+* check cilium kubernetes compatibility and roll out config changes ([301b886](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/301b88619cb746fc9eb6c590c89199c34f779029))
+* download gateway api crds instead of bundling them ([0b9cd34](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/0b9cd34230e06d4ed09a9ab3a60679931e783967))
+* improve cilium config ([2814daf](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/2814dafae41855d7149b91ff4c2f96ed9d3e8e34))
+* ingress controller is disabled by default ([0dcc020](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/0dcc02077644ca8739542b6c8201fdd7e1358478))
+
 ## [0.2.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.1.0...v0.2.0) (2026-10-31)
 
 
