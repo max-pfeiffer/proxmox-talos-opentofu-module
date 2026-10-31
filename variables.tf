@@ -27,6 +27,23 @@ variable "proxmox_network_bridge" {
   default     = "vmbr0"
 }
 
+variable "proxmox_pool_id" {
+  description = "Existing Proxmox resource pool the virtual machines are added to, e.g. for permissions or backup jobs selecting the pool. The pool must exist, the module does not manage it."
+  type        = string
+  default     = null
+}
+
+variable "proxmox_vm_tags" {
+  description = "Additional Proxmox tags for all virtual machines. The module always tags them with `talos`, the `cluster_name` and the node role `controlplane` or `worker`."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for tag in var.proxmox_vm_tags : can(regex("^[a-z0-9_][a-z0-9_+.-]*$", tag))])
+    error_message = "All proxmox_vm_tags must be lowercase Proxmox tags, starting with a letter, digit or underscore and containing only letters, digits and _ + . -"
+  }
+}
+
 variable "vm_cpu_type" {
   description = "CPU type emulated for the virtual machines"
   type        = string
@@ -76,9 +93,14 @@ variable "talos_linux_iso_file_id" {
 }
 
 variable "cluster_name" {
-  description = "A name to provide for the Talos cluster"
+  description = "Name of the Talos cluster, also used as Proxmox tag of the virtual machines and in the ISO image file name. It must be a lowercase RFC 1123 DNS label."
   type        = string
   default     = "talos"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$", var.cluster_name))
+    error_message = "cluster_name must be a lowercase RFC 1123 DNS label of at most 63 characters, e.g. talos-prod."
+  }
 }
 
 variable "cluster_vip_shared_ip" {
@@ -93,8 +115,10 @@ variable "cluster_vip_shared_ip" {
 
 variable "node_data" {
   description = <<-EOT
-    Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install_disk and install_image are
-    required, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
+    Control plane and worker nodes, keyed by the node's IPv4 address. hostname, vm_id, install_disk and install_image
+    are required, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
+    vm_id is the Proxmox VM ID, it must be unique in the Proxmox cluster and between 100 and 999999999. Changing it
+    replaces the virtual machine.
     The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase
     RFC 1123 DNS label. Without proxmox_node the VM is created on proxmox_target_node.
     At most five control planes are supported, they are upgraded one at a time in numerical IP order.
@@ -102,6 +126,7 @@ variable "node_data" {
   type = object({
     controlplanes = map(object({
       hostname      = string
+      vm_id         = number
       install_disk  = string
       install_image = string
       cpu_cores     = optional(number, 2)
@@ -111,6 +136,7 @@ variable "node_data" {
     }))
     workers = optional(map(object({
       hostname      = string
+      vm_id         = number
       install_disk  = string
       install_image = string
       cpu_cores     = optional(number, 2)
@@ -150,6 +176,21 @@ variable "node_data" {
       for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : node.hostname
     ])) == length(var.node_data.controlplanes) + length(var.node_data.workers)
     error_message = "All hostnames must be unique."
+  }
+
+  # Proxmox VM IDs are integers from 100 to 999999999, lower IDs are reserved
+  validation {
+    condition = alltrue([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : floor(node.vm_id) == node.vm_id && node.vm_id >= 100 && node.vm_id <= 999999999
+    ])
+    error_message = "All vm_ids must be integers between 100 and 999999999."
+  }
+
+  validation {
+    condition = length(distinct([
+      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) : node.vm_id
+    ])) == length(var.node_data.controlplanes) + length(var.node_data.workers)
+    error_message = "All vm_ids must be unique."
   }
 }
 

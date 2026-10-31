@@ -65,6 +65,7 @@ module "talos_cluster" {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-cp-0"
+        vm_id         = 10101
         proxmox_node  = "pve-0"
         cpu_cores     = 4
         memory        = 8192
@@ -74,12 +75,14 @@ module "talos_cluster" {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-cp-1"
+        vm_id         = 10102
         proxmox_node  = "pve-1"
       },
       "192.168.10.103" = {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-cp-2"
+        vm_id         = 10103
         proxmox_node  = "pve-2"
       },
     }
@@ -88,18 +91,21 @@ module "talos_cluster" {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-worker-0"
+        vm_id         = 10104
         proxmox_node  = "pve-0"
       },
       "192.168.10.105" = {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-worker-1"
+        vm_id         = 10105
         proxmox_node  = "pve-1"
       },
       "192.168.10.106" = {
         install_disk  = "/dev/vda"
         install_image = local.install_image
         hostname      = "your-cluster-name-worker-2"
+        vm_id         = 10106
         proxmox_node  = "pve-2"
         memory        = 32768
         disk_size     = 100

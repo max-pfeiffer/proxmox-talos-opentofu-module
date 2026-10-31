@@ -1,7 +1,10 @@
 resource "proxmox_virtual_environment_vm" "kubernetes_control_plane" {
   for_each        = var.node_data.controlplanes
   name            = each.value.hostname
+  vm_id           = each.value.vm_id
   description     = "Kubernetes Control Plane"
+  tags            = local.controlplane_vm_tags
+  pool_id         = var.proxmox_pool_id
   node_name       = local.controlplane_proxmox_nodes[each.key]
   started         = true
   stop_on_destroy = true
@@ -67,7 +70,10 @@ resource "proxmox_virtual_environment_vm" "kubernetes_control_plane" {
 resource "proxmox_virtual_environment_vm" "kubernetes_worker" {
   for_each        = var.node_data.workers
   name            = each.value.hostname
+  vm_id           = each.value.vm_id
   description     = "Kubernetes Worker Node"
+  tags            = local.worker_vm_tags
+  pool_id         = var.proxmox_pool_id
   node_name       = local.worker_proxmox_nodes[each.key]
   started         = true
   stop_on_destroy = true

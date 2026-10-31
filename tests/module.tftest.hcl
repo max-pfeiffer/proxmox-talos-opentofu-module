@@ -28,11 +28,13 @@ variables {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
         hostname      = "test-cp-0"
+        vm_id         = 10101
       }
       "192.168.10.102" = {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
         hostname      = "test-cp-1"
+        vm_id         = 10102
         proxmox_node  = "pve-1"
       }
     }
@@ -41,6 +43,7 @@ variables {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
         hostname      = "test-worker-0"
+        vm_id         = 10103
         proxmox_node  = "pve-1"
       }
     }
@@ -246,6 +249,7 @@ run "single_node_cluster" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-0"
+          vm_id         = 10101
         }
       }
     }
@@ -480,6 +484,7 @@ run "rejects_invalid_node_ip" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-0"
+          vm_id         = 10101
         }
       }
     }
@@ -554,6 +559,7 @@ run "rejects_invalid_hostname" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "Test_CP_0"
+          vm_id         = 10101
         }
       }
     }
@@ -572,6 +578,7 @@ run "rejects_duplicate_hostnames" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-node"
+          vm_id         = 10101
         }
       }
       workers = {
@@ -579,12 +586,135 @@ run "rejects_duplicate_hostnames" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-node"
+          vm_id         = 10103
         }
       }
     }
   }
 
   expect_failures = [var.node_data]
+}
+
+run "vm_ids_tags_and_pool" {
+  command = plan
+
+  variables {
+    proxmox_pool_id = "kubernetes"
+    proxmox_vm_tags = ["prod", "talos"]
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.101"].vm_id == 10101
+    error_message = "The vm_id must be used as control plane VM ID."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].vm_id == 10103
+    error_message = "The vm_id must be used as worker VM ID."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.101"].tags == tolist(["controlplane", "prod", "talos", "test"])
+    error_message = "Control planes must be tagged with talos, the cluster name, their role and proxmox_vm_tags, sorted and deduplicated."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].tags == tolist(["prod", "talos", "test", "worker"])
+    error_message = "Workers must be tagged with talos, the cluster name, their role and proxmox_vm_tags, sorted and deduplicated."
+  }
+
+  assert {
+    condition = alltrue([
+      proxmox_virtual_environment_vm.kubernetes_control_plane["192.168.10.101"].pool_id == "kubernetes",
+      proxmox_virtual_environment_vm.kubernetes_worker["192.168.10.103"].pool_id == "kubernetes",
+    ])
+    error_message = "All VMs must be added to proxmox_pool_id."
+  }
+}
+
+run "rejects_duplicate_vm_ids" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
+          vm_id         = 10101
+        }
+      }
+      workers = {
+        "192.168.10.103" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-worker-0"
+          vm_id         = 10101
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
+
+run "rejects_reserved_vm_id" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
+          vm_id         = 99
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
+
+run "rejects_fractional_vm_id" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
+          vm_id         = 101.5
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
+
+run "rejects_invalid_vm_tag" {
+  command = plan
+
+  variables {
+    proxmox_vm_tags = ["Prod Cluster"]
+  }
+
+  expect_failures = [var.proxmox_vm_tags]
+}
+
+run "rejects_invalid_cluster_name" {
+  command = plan
+
+  variables {
+    cluster_name = "Test_Cluster"
+  }
+
+  expect_failures = [var.cluster_name]
 }
 
 run "rejects_talos_version_without_hostname_config" {
@@ -621,16 +751,19 @@ run "bootstrap_node_sorted_numerically" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-10"
+          vm_id         = 10010
         }
         "192.168.10.9" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-9"
+          vm_id         = 10009
         }
         "192.168.10.100" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-100"
+          vm_id         = 10100
         }
       }
     }
@@ -652,16 +785,19 @@ run "controlplanes_chained_in_ip_order" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-10"
+          vm_id         = 10010
         }
         "192.168.10.9" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-9"
+          vm_id         = 10009
         }
         "192.168.10.100" = {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-100"
+          vm_id         = 10100
         }
       }
     }
@@ -689,6 +825,7 @@ run "rejects_more_than_five_control_planes" {
           install_disk  = "/dev/vda"
           install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
           hostname      = "test-cp-${i}"
+          vm_id         = 10101 + i
         }
       }
     }
