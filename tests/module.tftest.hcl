@@ -96,8 +96,22 @@ run "defaults" {
   }
 
   assert {
-    condition     = !contains([for s in data.helm_template.cilium.set : s.name], "ingressController.enabled")
+    condition     = !contains(keys(local.cilium_values), "ingressController")
     error_message = "The Cilium Ingress controller must be disabled by default."
+  }
+
+  assert {
+    condition     = data.helm_template.cilium.values[0] == yamlencode(local.cilium_values)
+    error_message = "The module's Cilium defaults must be the first values document, so cilium_helm_values can override them."
+  }
+
+  assert {
+    condition = alltrue([
+      local.cilium_values.rollOutCiliumPods,
+      local.cilium_values.operator.rollOutPods,
+      local.cilium_values.envoy.rollOutPods,
+    ])
+    error_message = "Cilium pods must be rolled out when their configuration changes."
   }
 }
 
@@ -186,12 +200,77 @@ run "ingress_controller" {
   }
 
   assert {
-    condition = alltrue([
-      for name in ["ingressController.enabled", "ingressController.loadbalancerMode"] :
-      contains([for s in data.helm_template.cilium.set : s.name], name)
-    ])
+    condition     = local.cilium_values.ingressController == { enabled = true, loadbalancerMode = "dedicated" }
     error_message = "The enabled Cilium Ingress controller must be configured."
   }
+}
+
+run "cilium_helm_values_override_defaults" {
+  command = plan
+
+  variables {
+    cilium_helm_values = ["bpf:\n  masquerade: false\n"]
+    cilium_helm_set = [
+      {
+        name  = "hubble.relay.enabled"
+        value = "true"
+      },
+    ]
+  }
+
+  assert {
+    condition     = tolist(data.helm_template.cilium.values) == tolist([yamlencode(local.cilium_values), "bpf:\n  masquerade: false\n"])
+    error_message = "cilium_helm_values must be applied after the module's defaults."
+  }
+
+  assert {
+    condition     = [for s in data.helm_template.cilium.set : s.name] == ["hubble.relay.enabled"]
+    error_message = "cilium_helm_set must only contain the user's values."
+  }
+}
+
+run "rejects_untested_kubernetes_version" {
+  command = plan
+
+  variables {
+    kubernetes_version = "1.40.0"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "rejects_unknown_cilium_minor_version" {
+  command = plan
+
+  variables {
+    cilium_version = "1.99.0"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "skips_kubernetes_compatibility_check" {
+  command = plan
+
+  variables {
+    kubernetes_version                    = "1.40.0"
+    cilium_kubernetes_compatibility_check = false
+  }
+
+  assert {
+    condition     = local.kubernetes_minor_version == "1.40"
+    error_message = "The Kubernetes minor version must be derived from kubernetes_version."
+  }
+}
+
+run "rejects_invalid_kubernetes_version" {
+  command = plan
+
+  variables {
+    kubernetes_version = "latest"
+  }
+
+  expect_failures = [var.kubernetes_version]
 }
 
 run "rejects_invalid_node_ip" {
