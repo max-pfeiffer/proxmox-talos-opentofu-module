@@ -23,12 +23,16 @@ locals {
   # Talos API endpoint for bootstrapping, Kubernetes upgrades and retrieving the kubeconfig
   bootstrap_node = local.controlplane_ips_sorted[0]
 
-  # Gateway API CRDs (standard channel), updated by Renovate
-  gateway_api_version = "v1.6.1"
+  # Gateway API CRDs (standard channel), the version supported by the Cilium minor version unless set explicitly.
+  # null for an unknown Cilium minor version, a precondition of the Cilium Helm template reports it.
+  cilium_gateway_api_version       = lookup(local.cilium_gateway_api_versions, local.cilium_minor_version, null)
+  gateway_api_version              = var.gateway_api_version != null ? var.gateway_api_version : local.cilium_gateway_api_version
+  gateway_api_minor_version        = local.gateway_api_version != null ? regex("^v\\d+\\.\\d+", local.gateway_api_version) : null
+  cilium_gateway_api_minor_version = local.cilium_gateway_api_version != null ? regex("^v\\d+\\.\\d+", local.cilium_gateway_api_version) : null
 
   # Manifests downloaded by the control plane nodes on bootstrap. Talos applies them together with the inline
   # manifests and applies CRDs first, so the Gateway API CRDs exist when Cilium starts.
-  extra_manifests = var.gateway_api_crds_enabled ? [
+  extra_manifests = var.gateway_api_crds_enabled && local.gateway_api_version != null ? [
     "https://github.com/kubernetes-sigs/gateway-api/releases/download/${local.gateway_api_version}/standard-install.yaml",
   ] : []
 

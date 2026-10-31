@@ -59,16 +59,15 @@
       "registryUrlTemplate": "https://helm.cilium.io"
     },
     {
-      "description": "Gateway API CRDs downloaded by the control plane nodes: module version and docs",
+      "description": "Gateway API CRD versions per Cilium minor version downloaded by the control plane nodes: module versions and docs",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^locals\\.tf$/",
-        "/^variables\\.tf$/",
+        "/^helm_templates\\.tf$/",
         "/^README\\.md$/"
       ],
       "matchStrings": [
-        "gateway_api_version\\s*=\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\"",
-        "Gateway API (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+        "\"\\d+\\.\\d+\"\\s*=\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\"",
+        "\\|\\s*\\d+\\.\\d+\\s*\\|\\s*(?<currentValue>v\\d+\\.\\d+\\.\\d+)\\s*\\|"
       ],
       "depNameTemplate": "kubernetes-sigs/gateway-api",
       "datasourceTemplate": "github-releases"
@@ -121,6 +120,17 @@
         "kubernetes-sigs/gateway-api"
       ],
       "groupName": "Gateway API"
+    },
+    {
+      "description": "Every Cilium minor version supports one Gateway API minor version, bump it together with the Cilium minor version",
+      "matchDepNames": [
+        "kubernetes-sigs/gateway-api"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
     },
     {
       "description": "Kubernetes minor versions must be supported by the Talos version, upgrade them deliberately",

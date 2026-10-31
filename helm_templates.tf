@@ -6,6 +6,15 @@ locals {
     "1.19" = ["1.32", "1.33", "1.34", "1.35"]
     "1.20" = ["1.33", "1.34", "1.35", "1.36"]
   }
+  # Gateway API version of the CRDs per Cilium minor version, see
+  # https://docs.cilium.io/en/v<Cilium minor version>/network/servicemesh/gateway-api/gateway-api/
+  # Every Cilium minor version supports one Gateway API minor version, e.g. Cilium 1.20 reads TLSRoute v1 which
+  # Gateway API serves since v1.6.1, Cilium 1.19 reads TLSRoute v1alpha2 which Gateway API v1.6 no longer serves.
+  # Add the new Cilium minor version here before bumping the cilium_version default, Renovate only bumps patches.
+  cilium_gateway_api_versions = {
+    "1.19" = "v1.4.1"
+    "1.20" = "v1.6.3"
+  }
   cilium_minor_version     = join(".", regex("^v?(\\d+)\\.(\\d+)", var.cilium_version))
   kubernetes_minor_version = join(".", regex("^v?(\\d+)\\.(\\d+)", var.kubernetes_version))
 
@@ -108,6 +117,23 @@ data "helm_template" "cilium" {
         local.kubernetes_minor_version,
       )
       error_message = "Cilium ${var.cilium_version} is not tested with Kubernetes ${var.kubernetes_version}, see https://docs.cilium.io/en/v${local.cilium_minor_version}/network/kubernetes/compatibility/. Set cilium_kubernetes_compatibility_check = false to skip this check."
+    }
+
+    precondition {
+      condition     = !var.gateway_api_crds_enabled || local.gateway_api_version != null
+      error_message = "The module does not know the Gateway API version for Cilium ${var.cilium_version}, set gateway_api_version, see https://docs.cilium.io/en/v${local.cilium_minor_version}/network/servicemesh/gateway-api/gateway-api/."
+    }
+
+    # Gateway API patch versions don't change the CRD schemas, other minor versions do
+    precondition {
+      condition = (
+        !var.cilium_gateway_api_compatibility_check || !var.gateway_api_enabled || !var.gateway_api_crds_enabled ||
+        local.gateway_api_version == null || (
+          local.cilium_gateway_api_version != null &&
+          local.gateway_api_minor_version == local.cilium_gateway_api_minor_version
+        )
+      )
+      error_message = "Gateway API ${coalesce(local.gateway_api_version, "-")} is not supported by Cilium ${var.cilium_version}, it needs Gateway API ${coalesce(local.cilium_gateway_api_minor_version, "<unknown>")}, see https://docs.cilium.io/en/v${local.cilium_minor_version}/network/servicemesh/gateway-api/gateway-api/. Set cilium_gateway_api_compatibility_check = false to skip this check."
     }
   }
 }

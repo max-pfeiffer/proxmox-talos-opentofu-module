@@ -133,6 +133,11 @@ run "defaults" {
     condition     = local.cilium_values.gatewayAPI.enabled
     error_message = "Cilium's Gateway API support must be enabled by default."
   }
+
+  assert {
+    condition     = local.gateway_api_version == local.cilium_gateway_api_versions[local.cilium_minor_version]
+    error_message = "The Gateway API version must default to the version supported by the Cilium minor version."
+  }
 }
 
 run "existing_iso_image" {
@@ -307,6 +312,138 @@ run "rejects_unknown_cilium_minor_version" {
   }
 
   expect_failures = [data.helm_template.cilium]
+}
+
+run "gateway_api_version_follows_cilium" {
+  command = plan
+
+  variables {
+    cilium_version     = "1.19.4"
+    kubernetes_version = "1.35.2"
+  }
+
+  assert {
+    condition     = local.gateway_api_version == "v1.4.1"
+    error_message = "Cilium 1.19 must get the Gateway API v1.4 CRDs."
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "/gateway-api/releases/download/v1.4.1/standard-install.yaml")
+    error_message = "Control planes must download the Gateway API CRDs supported by Cilium."
+  }
+}
+
+run "gateway_api_newer_patch_version" {
+  command = plan
+
+  variables {
+    gateway_api_version = "v1.6.9"
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "/gateway-api/releases/download/v1.6.9/standard-install.yaml")
+    error_message = "An explicit gateway_api_version must be downloaded."
+  }
+}
+
+run "rejects_gateway_api_minor_version_unsupported_by_cilium" {
+  command = plan
+
+  variables {
+    gateway_api_version = "v1.7.0"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "gateway_api_older_patch_version" {
+  command = plan
+
+  variables {
+    gateway_api_version = "v1.6.1"
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "/gateway-api/releases/download/v1.6.1/standard-install.yaml")
+    error_message = "Older Gateway API patch versions must be accepted, they don't change the CRD schemas."
+  }
+}
+
+run "rejects_gateway_api_crds_for_older_cilium" {
+  command = plan
+
+  variables {
+    cilium_version      = "1.19.4"
+    kubernetes_version  = "1.35.2"
+    gateway_api_version = "v1.6.1"
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "skips_gateway_api_compatibility_check" {
+  command = plan
+
+  variables {
+    gateway_api_version                    = "v1.7.0"
+    cilium_gateway_api_compatibility_check = false
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "/gateway-api/releases/download/v1.7.0/standard-install.yaml")
+    error_message = "The check must be skippable."
+  }
+}
+
+run "gateway_api_crds_managed_externally" {
+  command = plan
+
+  variables {
+    gateway_api_crds_enabled = false
+    gateway_api_version      = "v1.7.0"
+  }
+
+  assert {
+    condition     = length(local.extra_manifests) == 0
+    error_message = "Externally managed Gateway API CRDs must neither be downloaded nor checked."
+  }
+}
+
+run "rejects_unknown_cilium_minor_version_without_gateway_api_version" {
+  command = plan
+
+  variables {
+    cilium_version                        = "1.99.0"
+    cilium_kubernetes_compatibility_check = false
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "unknown_cilium_minor_version_with_gateway_api_version" {
+  command = plan
+
+  variables {
+    cilium_version                         = "1.99.0"
+    cilium_kubernetes_compatibility_check  = false
+    cilium_gateway_api_compatibility_check = false
+    gateway_api_version                    = "v1.9.0"
+  }
+
+  assert {
+    condition     = local.gateway_api_version == "v1.9.0"
+    error_message = "An explicit gateway_api_version must be used for an unknown Cilium minor version."
+  }
+}
+
+run "rejects_invalid_gateway_api_version" {
+  command = plan
+
+  variables {
+    gateway_api_version = "1.6.1"
+  }
+
+  expect_failures = [var.gateway_api_version]
 }
 
 run "skips_kubernetes_compatibility_check" {

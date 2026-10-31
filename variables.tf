@@ -215,9 +215,20 @@ variable "extra_inline_manifests" {
 
 # Gateway API
 variable "gateway_api_crds_enabled" {
-  description = "Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway_api_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
+  description = "Installs the Gateway API CRDs (standard channel) of gateway_api_version on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway_api_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
   type        = bool
   default     = true
+}
+
+variable "gateway_api_version" {
+  description = "Version of the Gateway API CRDs, e.g. v1.6.3. Defaults to the version supported by the Cilium minor version, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.gateway_api_version == null || can(regex("^v\\d+\\.\\d+\\.\\d+$", var.gateway_api_version))
+    error_message = "gateway_api_version must be a Gateway API release tag, e.g. v1.6.3."
+  }
 }
 
 variable "gateway_api_enabled" {
@@ -230,7 +241,7 @@ variable "gateway_api_enabled" {
 variable "cilium_version" {
   description = "Version of the Cilium Helm chart"
   type        = string
-  default     = "1.20.0"
+  default     = "1.20.4"
 
   validation {
     condition     = can(regex("^v?\\d+\\.\\d+\\.\\d+", var.cilium_version))
@@ -240,6 +251,12 @@ variable "cilium_version" {
 
 variable "cilium_kubernetes_compatibility_check" {
   description = "Fails the plan if the Cilium minor version is not e2e tested with the Kubernetes minor version, see https://docs.cilium.io/en/stable/network/kubernetes/compatibility/. Disable it to run an untested combination deliberately."
+  type        = bool
+  default     = true
+}
+
+variable "cilium_gateway_api_compatibility_check" {
+  description = "Fails the plan if gateway_api_version is not the Gateway API minor version supported by the Cilium minor version, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/. Disable it to run an untested combination deliberately."
   type        = bool
   default     = true
 }
