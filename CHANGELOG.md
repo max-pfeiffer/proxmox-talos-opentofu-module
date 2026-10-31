@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.4.0...v0.5.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** added proper ID handling for virtual machines
+
+### Features
+
+* **deps:** added proper ID handling for virtual machines ([0d75013](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/0d75013c89673db2e90ae46b322c2d16d22dc316))
+
 ## [0.4.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.3.0...v0.4.0) (2026-10-31)
 
 
