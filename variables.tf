@@ -92,6 +92,7 @@ variable "node_data" {
     required, cpu_cores, memory (MB), disk_size (GB) and proxmox_node are optional per node.
     The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase
     RFC 1123 DNS label. Without proxmox_node the VM is created on proxmox_target_node.
+    At most five control planes are supported, they are upgraded one at a time in numerical IP order.
   EOT
   type = object({
     controlplanes = map(object({
@@ -117,6 +118,12 @@ variable "node_data" {
   validation {
     condition     = length(var.node_data.controlplanes) > 0
     error_message = "node_data.controlplanes must contain at least one control plane node."
+  }
+
+  # Every control plane position has its own talos_machine block, see talos_linux.tf
+  validation {
+    condition     = length(var.node_data.controlplanes) <= 5
+    error_message = "node_data.controlplanes must contain at most five control plane nodes."
   }
 
   validation {

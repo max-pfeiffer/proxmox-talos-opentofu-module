@@ -144,6 +144,11 @@ machine name, Talos hostname and Kubernetes node name, so all three always match
 RFC 1123 DNS label of at most 63 characters. Without a `proxmox_node` the virtual machine is created on
 `proxmox_target_node`.
 
+At most five control plane nodes are supported. They are configured and upgraded one at a time in numerical IP
+order, see [Upgrading Talos](#upgrading-talos). Adding or removing a control plane node with a lower IP address than
+existing ones moves those to another position, `tofu plan` then shows their `talos_machine` resources as replaced.
+This re-applies the unchanged machine configuration and does not reboot the nodes.
+
 The control plane node with the lowest IP address is used to bootstrap the cluster, run Kubernetes upgrades and
 retrieve the kubeconfig. It is chosen once on creation, adding control plane nodes later does not change it. If you
 remove that node, move this role to another control plane node:
@@ -187,7 +192,7 @@ You might need to wait a bit until the nodes come up.
 | talos\_linux\_iso\_file\_id | ID of an existing Talos ISO image for initially booting the VM, e.g. `local:iso/talos-v1.13.8.iso`, which is managed outside of this module. It must be available on every Proxmox node which hosts a virtual machine. When set, the module does not download the image. | `string` | `null` | no |
 | cluster\_name | A name to provide for the Talos cluster | `string` | `"talos"` | no |
 | cluster\_vip\_shared\_ip | Shared virtual IP address for control plane nodes, used as Kubernetes API endpoint | `string` | n/a | yes |
-| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. | ```object({ controlplanes = map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
+| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. At most five control planes are supported, they are upgraded one at a time in numerical IP order. | ```object({ controlplanes = map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
 | network | Network for all nodes in CIDR notation, its prefix length is used for the node IP addresses | `string` | n/a | yes |
 | network\_gateway | Network gateway for all nodes | `string` | n/a | yes |
 | domain\_name\_servers | DNS servers for all nodes | `list(string)` | n/a | yes |
@@ -251,12 +256,12 @@ for the multi-year discussion on graceful, node-by-node upgrades.
    schema and defaults, which is a separate, deliberate action, not part of a routine OS upgrade.
 4. Run `tofu plan` to confirm only the `image` field (and any machine config drift) is changing, not
    disk layout or network settings.
-5. Control plane and worker nodes are each applied with `for_each` and have no `depends_on` chaining
-   between individual nodes, so a plain `tofu apply` upgrades every node in parallel. For a
-   multi-control-plane cluster this risks losing etcd quorum. Run `tofu apply -parallelism=1` instead
-   to upgrade nodes one at a time — see the provider's
+5. Run `tofu apply`. Control plane nodes are upgraded one at a time in numerical IP order, following
+   the provider's
    [Upgrading multiple nodes safely](https://registry.terraform.io/providers/siderolabs/talos/latest/docs/resources/machine#upgrading-multiple-nodes-safely)
-   guidance.
+   guidance: every node is drained, rebooted and back with a healthy etcd member before the next one
+   starts, so etcd keeps its quorum. Worker nodes are upgraded in parallel. To upgrade them one at a
+   time as well, run `tofu apply -parallelism=1`, or bump `install_image` for a few workers per apply.
 6. `drain_on_upgrade` is `true` for all `talos_machine` resources, so each node is cordoned and
    drained before it reboots and uncordoned afterwards. The kubeconfig needed for that is derived
    offline from the machine secrets by an ephemeral `talos_cluster_kubeconfig` resource, which keeps it

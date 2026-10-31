@@ -17,6 +17,9 @@ locals {
     join(".", [for octet in split(".", padded) : tostring(tonumber(octet))])
   ]
 
+  # Position of every control plane in controlplane_ips_sorted, selects its talos_machine block
+  controlplane_positions = { for i, ip in local.controlplane_ips_sorted : ip => i }
+
   # Talos API endpoint for bootstrapping, Kubernetes upgrades and retrieving the kubeconfig
   bootstrap_node = local.controlplane_ips_sorted[0]
 

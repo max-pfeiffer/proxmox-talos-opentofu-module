@@ -344,3 +344,58 @@ run "bootstrap_node_sorted_numerically" {
     error_message = "The bootstrap node must be the numerically lowest control plane IP."
   }
 }
+
+run "controlplanes_chained_in_ip_order" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        "192.168.10.10" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-10"
+        }
+        "192.168.10.9" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-9"
+        }
+        "192.168.10.100" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-100"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      keys(talos_machine.controlplane_0),
+      keys(talos_machine.controlplane_1),
+      keys(talos_machine.controlplane_2),
+      keys(talos_machine.controlplane_3),
+      keys(talos_machine.controlplane_4),
+    ] == [["192.168.10.9"], ["192.168.10.10"], ["192.168.10.100"], [], []]
+    error_message = "Every control plane must be managed by the talos_machine block of its numerical IP position."
+  }
+}
+
+run "rejects_more_than_five_control_planes" {
+  command = plan
+
+  variables {
+    node_data = {
+      controlplanes = {
+        for i in range(6) : "192.168.10.${101 + i}" => {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-${i}"
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.node_data]
+}
