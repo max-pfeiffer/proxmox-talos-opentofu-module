@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.3.0...v0.4.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** bump cilium to 1.20.4 and gateway api to v1.6.3 and added version mappings
+
+### Features
+
+* **deps:** bump cilium to 1.20.4 and gateway api to v1.6.3 and added version mappings ([c7bb1f3](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/commit/c7bb1f3effbc7f7459e249939981985e2b830a20))
+
 ## [0.3.0](https://github.com/max-pfeiffer/terraform-proxmox-talos-cluster/compare/v0.2.0...v0.3.0) (2026-10-31)
 
 
