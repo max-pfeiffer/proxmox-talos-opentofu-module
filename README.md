@@ -79,6 +79,7 @@ module "talos_cluster" {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515:v1.13.8"
         hostname      = "your-cluster-name-cp-0"
+        vm_id         = 10101
       }
     }
     workers = {
@@ -86,6 +87,7 @@ module "talos_cluster" {
         install_disk  = "/dev/vda"
         install_image = "factory.talos.dev/nocloud-installer/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515:v1.13.8"
         hostname      = "your-cluster-name-worker-0"
+        vm_id         = 10102
       }
     }
   }
@@ -106,7 +108,7 @@ root module, a non-default configuration can be passed with the module's `provid
 `providers = { proxmox = proxmox.dc2 }`.
 
 The `bpg/proxmox` and `siderolabs/talos` provider versions are constrained to a single minor version, e.g.
-`~> 0.111.1`, because pre-1.0 providers ship breaking changes in minor releases. If your root module uses these
+`~> 0.119.0`, because pre-1.0 providers ship breaking changes in minor releases. If your root module uses these
 providers elsewhere, it must use the same minor version. A module release bumping a provider minor version requires
 you to bump it as well.
 
@@ -140,11 +142,29 @@ provider "helm" {
 ```
 
 
-Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `install_disk` and `install_image` are required,
+Nodes in `node_data` are keyed by their IPv4 address. `hostname`, `vm_id`, `install_disk` and `install_image` are required,
 `cpu_cores`, `memory` (MB), `disk_size` (GB) and `proxmox_node` are optional per node. The `hostname` is used as virtual
 machine name, Talos hostname and Kubernetes node name, so all three always match. It must be a unique lowercase
 RFC 1123 DNS label of at most 63 characters. Without a `proxmox_node` the virtual machine is created on
 `proxmox_target_node`.
+
+### Virtual machine IDs
+Every node needs an explicit Proxmox VM ID in `vm_id`. The module never lets Proxmox pick the next free ID, because
+the VM ID is what backup jobs, HA resources, replication jobs and monitoring refer to:
+* the ID is known before the first apply, so these can be configured upfront, and it follows your ID scheme
+* a replaced virtual machine gets its old ID again, so nothing silently points to a missing or unrelated VM
+* concurrent applies, e.g. of several clusters, cannot race for the same next free ID
+
+VM IDs must be unique in the whole Proxmox cluster and between 100 and 999999999, the module validates that they are
+unique within the cluster it creates. A scheme derived from the IP address keeps them unique and easy to find, e.g.
+`10101` for `192.168.10.101`. Changing a `vm_id` replaces the virtual machine and its disk.
+
+Changing the IP address of a node changes its key in `node_data`, so `tofu plan` shows the virtual machine as
+replaced, with the same `vm_id` and a new disk. The node then joins the cluster again.
+
+All virtual machines are tagged with `talos`, the `cluster_name` and their role `controlplane` or `worker`, add more
+tags with `proxmox_vm_tags`. With `proxmox_pool_id` they are added to an existing resource pool, e.g. for a backup job
+or permissions covering the whole cluster.
 
 At most five control plane nodes are supported. They are configured and upgraded one at a time in numerical IP
 order, see [Upgrading Talos](#upgrading-talos). Adding or removing a control plane node with a lower IP address than
@@ -187,14 +207,16 @@ You might need to wait a bit until the nodes come up.
 | proxmox\_iso\_datastore | Proxmox datastore the Talos Linux ISO image is downloaded to, it must support the `iso` content type. Ignored when `talos_linux_iso_file_id` is set. | `string` | `"local"` | no |
 | proxmox\_iso\_download\_node | Proxmox node the Talos Linux ISO image is downloaded to once, for a `proxmox_iso_datastore` which is shared by all Proxmox nodes, e.g. NFS or CephFS. By default the image is downloaded to every Proxmox node which hosts a virtual machine. Ignored when `talos_linux_iso_file_id` is set. | `string` | `null` | no |
 | proxmox\_network\_bridge | Proxmox network bridge the virtual machines are attached to | `string` | `"vmbr0"` | no |
+| proxmox\_pool\_id | Existing Proxmox resource pool the virtual machines are added to, e.g. for permissions or backup jobs selecting the pool. The pool must exist, the module does not manage it. | `string` | `null` | no |
+| proxmox\_vm\_tags | Additional Proxmox tags for all virtual machines. The module always tags them with `talos`, the `cluster_name` and the node role `controlplane` or `worker`. | `list(string)` | `[]` | no |
 | vm\_cpu\_type | CPU type emulated for the virtual machines | `string` | `"host"` | no |
 | talos\_version | Talos machine configuration contract version. Pin it to the version the cluster was created with, it is independent of the installed Talos version which is driven by `install_image`. Required so that a module upgrade never changes the contract of an existing cluster. At least 1.12 is required for the HostnameConfig document. | `string` | n/a | yes |
 | kubernetes\_version | Kubernetes version of the cluster, changing it runs Talos' upgrade-k8s procedure. Required so that a module upgrade never upgrades Kubernetes implicitly. | `string` | n/a | yes |
 | talos\_linux\_iso\_image\_url | URL of the Talos ISO image for initially booting the VM. It is downloaded as `talos-<cluster_name>-<URL hash>.iso`. Ignored when `talos_linux_iso_file_id` is set. | `string` | `"https://factory.talos.dev/image/ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515/v1.13.8/nocloud-amd64.iso"` | no |
 | talos\_linux\_iso\_file\_id | ID of an existing Talos ISO image for initially booting the VM, e.g. `local:iso/talos-v1.13.8.iso`, which is managed outside of this module. It must be available on every Proxmox node which hosts a virtual machine. When set, the module does not download the image. | `string` | `null` | no |
-| cluster\_name | A name to provide for the Talos cluster | `string` | `"talos"` | no |
+| cluster\_name | Name of the Talos cluster, also used as Proxmox tag of the virtual machines and in the ISO image file name. It must be a lowercase RFC 1123 DNS label. | `string` | `"talos"` | no |
 | cluster\_vip\_shared\_ip | Shared virtual IP address for control plane nodes, used as Kubernetes API endpoint | `string` | n/a | yes |
-| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. At most five control planes are supported, they are upgraded one at a time in numerical IP order. | ```object({ controlplanes = map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
+| node\_data | Control plane and worker nodes, keyed by the node's IPv4 address. hostname, vm\_id, install\_disk and install\_image are required, cpu\_cores, memory (MB), disk\_size (GB) and proxmox\_node are optional per node. vm\_id is the Proxmox VM ID, it must be unique in the Proxmox cluster and between 100 and 999999999. Changing it replaces the virtual machine. The hostname is used as VM name, Talos hostname and Kubernetes node name, it must be a unique lowercase RFC 1123 DNS label. Without proxmox\_node the VM is created on proxmox\_target\_node. At most five control planes are supported, they are upgraded one at a time in numerical IP order. | ```object({ controlplanes = map(object({ hostname = string vm_id = number install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 8192) disk_size = optional(number, 50) proxmox_node = optional(string) })) workers = optional(map(object({ hostname = string vm_id = number install_disk = string install_image = string cpu_cores = optional(number, 2) memory = optional(number, 16384) disk_size = optional(number, 50) proxmox_node = optional(string) })), {}) })``` | n/a | yes |
 | network | Network for all nodes in CIDR notation, its prefix length is used for the node IP addresses | `string` | n/a | yes |
 | network\_gateway | Network gateway for all nodes | `string` | n/a | yes |
 | domain\_name\_servers | DNS servers for all nodes | `list(string)` | n/a | yes |

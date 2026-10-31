@@ -8,6 +8,10 @@ locals {
   controlplane_proxmox_nodes = { for ip, node in var.node_data.controlplanes : ip => coalesce(node.proxmox_node, var.proxmox_target_node) }
   worker_proxmox_nodes       = { for ip, node in var.node_data.workers : ip => coalesce(node.proxmox_node, var.proxmox_target_node) }
 
+  # Proxmox tags per node role. Proxmox stores tags sorted and deduplicated, so they are planned the same way.
+  controlplane_vm_tags = sort(distinct(concat(["talos", var.cluster_name, "controlplane"], var.proxmox_vm_tags)))
+  worker_vm_tags       = sort(distinct(concat(["talos", var.cluster_name, "worker"], var.proxmox_vm_tags)))
+
   # Proxmox nodes which host a virtual machine
   proxmox_nodes = toset(concat(values(local.controlplane_proxmox_nodes), values(local.worker_proxmox_nodes)))
 
