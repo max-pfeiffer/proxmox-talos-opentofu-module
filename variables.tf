@@ -215,7 +215,13 @@ variable "extra_inline_manifests" {
 
 # Gateway API
 variable "gateway_api_crds_enabled" {
-  description = "Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, required by Cilium's Gateway API support"
+  description = "Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway_api_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
+  type        = bool
+  default     = true
+}
+
+variable "gateway_api_enabled" {
+  description = "Enables Cilium's Gateway API support, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/"
   type        = bool
   default     = true
 }

@@ -15,9 +15,10 @@ Kubernetes cluster features:
   * without kube-proxy
   * with [L2 loadbalancer support](https://docs.cilium.io/en/stable/network/l2-announcements/)
   * with [Ingress controller support](https://docs.cilium.io/en/stable/network/servicemesh/ingress/) (optional, disabled by default)
-  * with [Gateway API support](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/)
+  * with [Gateway API support](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/) (optional)
   * with [Egress gateway support](https://docs.cilium.io/en/stable/network/egress-gateway/egress-gateway/)
-* [Gateway API v1.6.1](https://gateway-api.sigs.k8s.io/) CRDs (standard channel) are installed (optional)
+* [Gateway API v1.6.1](https://gateway-api.sigs.k8s.io/) CRDs (standard channel) are installed (optional), the control
+  plane nodes download them from GitHub on bootstrap and need internet access
 * control plane nodes share a [virtual IP](https://www.talos.dev/v1.13/talos-guides/network/vip/) as Kubernetes API endpoint
 * Talos OS and Kubernetes upgrades are handled declaratively, see [Upgrading](#upgrading)
 
@@ -201,7 +202,8 @@ You might need to wait a bit until the nodes come up.
 | talos\_machine\_config\_patch\_controlplane | Configuration patch which will be applied to all controlplane nodes | `string` | `""` | no |
 | talos\_machine\_config\_patch\_worker | Configuration patch which will be applied to all worker nodes | `string` | `""` | no |
 | extra\_inline\_manifests | Additional Kubernetes manifests which are applied by Talos on bootstrap, see https://www.talos.dev/latest/reference/configuration/v1alpha1/config/#Config.cluster.inlineManifests | ```list(object({ name = string contents = string }))``` | `[]` | no |
-| gateway\_api\_crds\_enabled | Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, required by Cilium's Gateway API support | `bool` | `true` | no |
+| gateway\_api\_crds\_enabled | Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway\_api\_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `bool` | `true` | no |
+| gateway\_api\_enabled | Enables Cilium's Gateway API support, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `bool` | `true` | no |
 | cilium\_version | Version of the Cilium Helm chart | `string` | `"1.20.0"` | no |
 | cilium\_kubernetes\_compatibility\_check | Fails the plan if the Cilium minor version is not e2e tested with the Kubernetes minor version, see https://docs.cilium.io/en/stable/network/kubernetes/compatibility/. Disable it to run an untested combination deliberately. | `bool` | `true` | no |
 | ingress\_controller\_enabled | Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/. Disabled by default, the Gateway API supersedes it and its shared LoadBalancer Service takes an address of the LoadBalancer IP pool. | `bool` | `false` | no |
@@ -299,7 +301,20 @@ talosctl -n <control plane node> upgrade-k8s --to <current Kubernetes version>
 ```
 
 The module's Cilium defaults are the first Helm values document. `cilium_helm_values` are applied after them in
-order, `cilium_helm_set` is applied last and overrides both.
+order, `cilium_helm_set` is applied last and overrides both, e.g. to disable L2 announcements or the egress
+gateway:
+```hcl
+cilium_helm_values = [
+  yamlencode({
+    l2announcements = { enabled = false }
+    egressGateway   = { enabled = false }
+  }),
+]
+```
+
+The Gateway API CRDs are downloaded by the control plane nodes as soon as their network is up, normally long before
+Talos applies the manifests. Cilium's operator only enables its Gateway API support if the CRDs exist when it starts:
+if the download was delayed, restart it with `kubectl -n kube-system rollout restart deployment/cilium-operator`.
 
 ### Cilium and Kubernetes compatibility
 The plan fails if the Cilium minor version is not e2e tested with the Kubernetes minor version according to the
@@ -315,8 +330,8 @@ Pin the module to an exact `version` and read the [changelog](https://github.com
 
 A change is breaking (`feat!:` or a `BREAKING CHANGE:` footer) if it changes infrastructure that existing users get
 on their next `tofu apply` without touching their configuration, in particular:
-* changing the default of any version input, e.g. `cilium_version`, `talos_linux_iso_image_url` or the bundled
-  Gateway API CRDs
+* changing the default of any version input, e.g. `cilium_version`, `talos_linux_iso_image_url` or the Gateway
+  API CRD version
 * removing or renaming inputs or outputs, adding required inputs or changing their types
 * changing resource addresses without `moved` blocks
 * raising the minimum OpenTofu or provider versions

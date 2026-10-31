@@ -1,6 +1,8 @@
 machine:
   features:
     hostDNS:
+      # Cilium's bpf.masquerade breaks DNS forwarding to the host, see
+      # https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
       forwardKubeDNSToHost: false
   install:
     disk: ${install_disk}
@@ -27,6 +29,12 @@ cluster:
       name: none
   proxy:
     disabled: true
+%{ if length(extra_manifests) > 0 ~}
+  extraManifests:
+%{ for url in extra_manifests ~}
+    - ${url}
+%{ endfor ~}
+%{ endif ~}
   inlineManifests:
 %{ for manifest in inline_manifests ~}
     - name: ${manifest.name}

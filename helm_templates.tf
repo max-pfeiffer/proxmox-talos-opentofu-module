@@ -43,7 +43,7 @@ locals {
       # Gateway API
       # See: https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/
       gatewayAPI = {
-        enabled           = true
+        enabled           = var.gateway_api_enabled
         enableAlpn        = true
         enableAppProtocol = true
         gatewayClass = {
@@ -72,6 +72,8 @@ locals {
       rollOutCiliumPods = true
       operator = {
         rollOutPods = true
+        # The replicas avoid sharing a node, a second replica stays pending on a single node cluster
+        replicas = min(2, length(var.node_data.controlplanes) + length(var.node_data.workers))
       }
       envoy = {
         rollOutPods = true

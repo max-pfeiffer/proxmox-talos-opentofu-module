@@ -59,6 +59,21 @@
       "registryUrlTemplate": "https://helm.cilium.io"
     },
     {
+      "description": "Gateway API CRDs downloaded by the control plane nodes: module version and docs",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^locals\\.tf$/",
+        "/^variables\\.tf$/",
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "gateway_api_version\\s*=\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\"",
+        "Gateway API (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "kubernetes-sigs/gateway-api",
+      "datasourceTemplate": "github-releases"
+    },
+    {
       "description": "Tool versions installed in the workflows",
       "customType": "regex",
       "managerFilePatterns": [
@@ -85,10 +100,11 @@
   ],
   "packageRules": [
     {
-      "description": "Changing the module's Talos ISO or Cilium defaults changes existing clusters, which is a breaking change",
+      "description": "Changing the module's Talos ISO, Cilium or Gateway API CRD defaults changes existing clusters, which is a breaking change",
       "matchDepNames": [
         "siderolabs/talos",
-        "cilium"
+        "cilium",
+        "kubernetes-sigs/gateway-api"
       ],
       "commitMessagePrefix": "feat(deps)!:"
     },
@@ -98,6 +114,13 @@
         "siderolabs/talos"
       ],
       "groupName": "Talos Linux"
+    },
+    {
+      "description": "Group all Gateway API version references into one pull request",
+      "matchDepNames": [
+        "kubernetes-sigs/gateway-api"
+      ],
+      "groupName": "Gateway API"
     },
     {
       "description": "Kubernetes minor versions must be supported by the Talos version, upgrade them deliberately",

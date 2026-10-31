@@ -86,8 +86,18 @@ run "defaults" {
   }
 
   assert {
-    condition     = [for m in local.inline_manifests : m.name] == ["gateway-api", "cilium"]
-    error_message = "Gateway API CRDs must be applied before Cilium."
+    condition     = [for m in local.inline_manifests : m.name] == ["cilium"]
+    error_message = "Cilium must be the only inline manifest by default."
+  }
+
+  assert {
+    condition     = strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "extraManifests:\n    - https://github.com/kubernetes-sigs/gateway-api/releases/download/${local.gateway_api_version}/standard-install.yaml\n")
+    error_message = "Control planes must download the Gateway API CRDs of the pinned version."
+  }
+
+  assert {
+    condition     = !strcontains(data.talos_machine_configuration.worker["192.168.10.103"].config_patches[0], "extraManifests")
+    error_message = "Workers must not download extra manifests."
   }
 
   assert {
@@ -112,6 +122,16 @@ run "defaults" {
       local.cilium_values.envoy.rollOutPods,
     ])
     error_message = "Cilium pods must be rolled out when their configuration changes."
+  }
+
+  assert {
+    condition     = local.cilium_values.operator.replicas == 2
+    error_message = "Clusters with several nodes must run two Cilium operator replicas."
+  }
+
+  assert {
+    condition     = local.cilium_values.gatewayAPI.enabled
+    error_message = "Cilium's Gateway API support must be enabled by default."
   }
 }
 
@@ -178,7 +198,12 @@ run "optional_features" {
 
   assert {
     condition     = [for m in local.inline_manifests : m.name] == ["cilium", "extra"]
-    error_message = "Disabled Gateway API CRDs must be omitted and extra manifests appended."
+    error_message = "Extra inline manifests must be appended."
+  }
+
+  assert {
+    condition     = !strcontains(data.talos_machine_configuration.controlplane["192.168.10.101"].config_patches[0], "extraManifests")
+    error_message = "Disabled Gateway API CRDs must not be downloaded."
   }
 
   assert {
@@ -202,6 +227,41 @@ run "ingress_controller" {
   assert {
     condition     = local.cilium_values.ingressController == { enabled = true, loadbalancerMode = "dedicated" }
     error_message = "The enabled Cilium Ingress controller must be configured."
+  }
+}
+
+run "single_node_cluster" {
+  command = plan
+
+  variables {
+    allow_scheduling_on_control_planes = true
+    node_data = {
+      controlplanes = {
+        "192.168.10.101" = {
+          install_disk  = "/dev/vda"
+          install_image = "factory.talos.dev/nocloud-installer/schematic:v1.13.8"
+          hostname      = "test-cp-0"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = local.cilium_values.operator.replicas == 1
+    error_message = "A single node cluster must run one Cilium operator replica."
+  }
+}
+
+run "gateway_api_disabled" {
+  command = plan
+
+  variables {
+    gateway_api_enabled = false
+  }
+
+  assert {
+    condition     = !local.cilium_values.gatewayAPI.enabled
+    error_message = "Cilium's Gateway API support must be disableable."
   }
 }
 
