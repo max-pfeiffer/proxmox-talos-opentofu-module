@@ -11,14 +11,15 @@ Kubernetes cluster features:
 * [Talos Linux v1.13.8](https://www.talos.dev/)
 * Kubernetes v1.36.3
 * no kube-proxy
-* [Cilium v1.20.0](https://cilium.io/) as Container Network Interface (CNI)
+* [Cilium v1.20.4](https://cilium.io/) as Container Network Interface (CNI)
   * without kube-proxy
   * with [L2 loadbalancer support](https://docs.cilium.io/en/stable/network/l2-announcements/)
   * with [Ingress controller support](https://docs.cilium.io/en/stable/network/servicemesh/ingress/) (optional, disabled by default)
   * with [Gateway API support](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/) (optional)
   * with [Egress gateway support](https://docs.cilium.io/en/stable/network/egress-gateway/egress-gateway/)
-* [Gateway API v1.6.1](https://gateway-api.sigs.k8s.io/) CRDs (standard channel) are installed (optional), the control
-  plane nodes download them from GitHub on bootstrap and need internet access
+* [Gateway API](https://gateway-api.sigs.k8s.io/) CRDs (standard channel) of the version supported by Cilium are
+  installed (optional), the control plane nodes download them from GitHub on bootstrap and need internet access, see
+  [Cilium and Gateway API compatibility](#cilium-and-gateway-api-compatibility)
 * control plane nodes share a [virtual IP](https://www.talos.dev/v1.13/talos-guides/network/vip/) as Kubernetes API endpoint
 * Talos OS and Kubernetes upgrades are handled declaratively, see [Upgrading](#upgrading)
 
@@ -202,10 +203,12 @@ You might need to wait a bit until the nodes come up.
 | talos\_machine\_config\_patch\_controlplane | Configuration patch which will be applied to all controlplane nodes | `string` | `""` | no |
 | talos\_machine\_config\_patch\_worker | Configuration patch which will be applied to all worker nodes | `string` | `""` | no |
 | extra\_inline\_manifests | Additional Kubernetes manifests which are applied by Talos on bootstrap, see https://www.talos.dev/latest/reference/configuration/v1alpha1/config/#Config.cluster.inlineManifests | ```list(object({ name = string contents = string }))``` | `[]` | no |
-| gateway\_api\_crds\_enabled | Installs the Gateway API v1.6.1 CRDs (standard channel) on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway\_api\_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `bool` | `true` | no |
+| gateway\_api\_crds\_enabled | Installs the Gateway API CRDs (standard channel) of gateway\_api\_version on bootstrap, the control plane nodes download them from GitHub. When disabling it while gateway\_api\_enabled is true, install the CRDs required by Cilium yourself, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `bool` | `true` | no |
+| gateway\_api\_version | Version of the Gateway API CRDs, e.g. v1.6.3. Defaults to the version supported by the Cilium minor version, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `string` | `null` | no |
 | gateway\_api\_enabled | Enables Cilium's Gateway API support, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/ | `bool` | `true` | no |
-| cilium\_version | Version of the Cilium Helm chart | `string` | `"1.20.0"` | no |
+| cilium\_version | Version of the Cilium Helm chart | `string` | `"1.20.4"` | no |
 | cilium\_kubernetes\_compatibility\_check | Fails the plan if the Cilium minor version is not e2e tested with the Kubernetes minor version, see https://docs.cilium.io/en/stable/network/kubernetes/compatibility/. Disable it to run an untested combination deliberately. | `bool` | `true` | no |
+| cilium\_gateway\_api\_compatibility\_check | Fails the plan if gateway\_api\_version is not the Gateway API minor version supported by the Cilium minor version, see https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/. Disable it to run an untested combination deliberately. | `bool` | `true` | no |
 | ingress\_controller\_enabled | Enables the Cilium Ingress controller, see https://docs.cilium.io/en/stable/network/servicemesh/ingress/. Disabled by default, the Gateway API supersedes it and its shared LoadBalancer Service takes an address of the LoadBalancer IP pool. | `bool` | `false` | no |
 | cilium\_helm\_set | Additional Helm values for Cilium, applied after the module's defaults and cilium\_helm\_values so they override both | ```list(object({ name = string value = string type = optional(string) }))``` | `[]` | no |
 | cilium\_helm\_values | Additional Helm values for Cilium as YAML documents, applied in order after the module's defaults so they can override them | `list(string)` | `[]` | no |
@@ -321,6 +324,33 @@ The plan fails if the Cilium minor version is not e2e tested with the Kubernetes
 [Cilium compatibility matrix](https://docs.cilium.io/en/stable/network/kubernetes/compatibility/), e.g. Cilium 1.20
 supports Kubernetes 1.33 to 1.36. Upgrade Cilium before moving to a Kubernetes minor version it does not support yet.
 Set `cilium_kubernetes_compatibility_check = false` to run an untested combination deliberately.
+
+### Cilium and Gateway API compatibility
+The Gateway API CRDs must match the Cilium version, not the Kubernetes version: Cilium's operator is the Gateway API
+controller and every Cilium minor version supports one Gateway API minor version, see
+[Cilium's Gateway API support](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/gateway-api/). Gateway
+API itself supports the five most recent Kubernetes minor versions, which every Kubernetes version supported by Cilium
+satisfies.
+
+| Cilium | Gateway API |
+|--------|-------------|
+| 1.19   | v1.4.1      |
+| 1.20   | v1.6.3      |
+
+`gateway_api_version` defaults to the version of the Cilium minor version. The plan fails if it is set to another
+Gateway API minor version, any patch version is accepted since patch versions don't change the CRD schemas. Set
+`cilium_gateway_api_compatibility_check = false` to run an untested combination deliberately. The check is skipped
+if `gateway_api_crds_enabled` or `gateway_api_enabled` is false.
+
+Talos only creates the CRDs on bootstrap, synchronize them like the Cilium configuration with `talosctl upgrade-k8s`,
+see [Changing the Cilium configuration](#changing-the-cilium-configuration). When upgrading to a new Cilium minor
+version, read the [Cilium upgrade notes](https://docs.cilium.io/en/stable/operations/upgrade/) first and upgrade the
+CRDs before Cilium where the notes require it, e.g. for Cilium 1.20:
+* Gateway API v1.6.1 serves `TLSRoute` as `v1` only, existing `v1alpha2` `TLSRoute` objects can no longer be read by
+  the API server. Back them up before upgrading the CRDs and recreate them as `v1`.
+* Gateway API v1.6.1 installs the `safe-upgrades.gateway.networking.k8s.io` ValidatingAdmissionPolicy, which
+  rejects CRDs older than v1.5.0 and experimental channel CRDs on top of standard channel CRDs. Downgrading Cilium to
+  1.19 or installing experimental CRDs requires deleting the policy first.
 
 ## Versioning
 The module follows [Semantic Versioning](https://semver.org/), releases are tagged `vX.Y.Z` and created by
